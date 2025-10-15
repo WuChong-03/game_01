@@ -24,7 +24,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 		/// ↓更新処理ここから
 		///
-		wuchong 胡v如何符合如何和光和热
+	gotyuu push test3
+		gotyuu push test3
+		gotyuu push test3
+		gotyuu push test3
 		///
 		/// ↑更新処理ここまで
 		///
