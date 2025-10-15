@@ -7,6 +7,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// ライブラリの初期化
 	Novice::Initialize(kWindowTitle, 1280, 720);
+	
+	
 
 	// キー入力結果を受け取る箱
 	char keys[256] = {0};
@@ -32,7 +34,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 		/// ↓描画処理ここから
 		///
-
+               hello
 		///
 		/// ↑描画処理ここまで
 		///
