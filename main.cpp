@@ -13,7 +13,7 @@ const char kWindowTitle[] = "ランゲーム（Title + Game Scene Integrated）"
 enum Scene {
 	TITLE, // タイトル画面
 	PLAY,  // ゲーム中
-	END    // エンド（今回は未使用）
+	END    // エンド
 };
 
 //--------------------------------------------
@@ -73,6 +73,39 @@ void DrawButton(const Button& button, bool isSelected) {
 	Novice::ScreenPrintf(int(button.x - 40), int(button.y - 10), "%s", button.label);
 }
 
+typedef struct Vector2 {
+	float x;
+	float y;
+} Vector2;
+
+typedef struct Corners {
+	Vector2 leftTop;
+	Vector2 rightTop;
+	Vector2 leftBottom;
+	Vector2 rightBottom;
+} Corners;
+
+typedef struct Player {
+	Vector2 centerPos;
+	Corners cornersPos;
+	float vecY;
+	float width;
+	float height;
+	bool isJumping;
+	bool isHit;
+} Player;
+
+typedef struct Object {
+	Corners pos;
+	float width;
+	float height;
+	int speed;
+	int startDelay;
+	bool isHitX = false;
+	bool isHitY = false;
+	bool isSpawned = false;
+}Object;
+
 //--------------------------------------------
 // メイン関数（エントリーポイント）
 //--------------------------------------------
@@ -106,19 +139,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//--------------------------------------------
 	// ランゲームの変数設定
 	//--------------------------------------------
-	float playerX = 200, playerY = 600;   // プレイヤー位置
-	float playerW = 50, playerH = 50;     // プレイヤーのサイズ
-	float velocityY = 0;                  // 縦方向速度
-	bool isJumping = false;               // ジャンプ中かどうか
+	Player player = {
+		.centerPos = {200,600},
+		.vecY = 0,
+		.width = 50,
+		.height = 50,
+		.isJumping = false,
+		.isHit = false
+	};
+
+	player.cornersPos = {
+			{player.centerPos.x - player.width / 2,player.centerPos.y - player.height / 2},
+			{player.centerPos.x + player.width / 2,player.centerPos.y - player.height / 2},
+			{player.centerPos.x - player.width / 2,player.centerPos.y + player.height / 2},
+			{player.centerPos.x + player.width / 2,player.centerPos.y + player.height / 2}
+	};
 
 	float obsX = 1000, obsY = 600;        // 障害物の位置
 	float obsW = 50, obsH = 100;          // 障害物のサイズ
 	float groundY = 650;                  // 地面の高さ
 	bool isGameOver = false;              // ゲームオーバーかどうか
 
-	const float GRAVITY = 0.6f;           // 重力
-	const float JUMP_POWER = -12.0f;      // ジャンプ力
-	const float SCROLL_SPEED = 6.0f;      // スクロール速度
+	const float gravity = 0.6f;           // 重力
+	const float jumpPower = -18.0f;      // ジャンプ力
+	const float scrollSpeed = 6.0f;      // スクロール速度
 
 	//--------------------------------------------
 	// メインループ
@@ -152,7 +196,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				case 0: // Start Game
 					currentScene = PLAY;  // ゲーム開始
 					isGameOver = false;
-					playerX = 200; playerY = 600; obsX = 1000; velocityY = 0;
+					player.centerPos.x = 200; player.centerPos.y = 600; obsX = 1000; player.vecY = 0;
 					break;
 				case 1: // How to Play
 					showHowTo = !showHowTo; // 操作説明ウィンドウの表示切替
@@ -174,33 +218,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (!isGameOver) {
 
 				// スペースでジャンプ
-				if (keys[DIK_SPACE] && !preKeys[DIK_SPACE] && !isJumping) {
-					velocityY = JUMP_POWER;
-					isJumping = true;
+				if (keys[DIK_SPACE] && !preKeys[DIK_SPACE] && !player.isJumping) {
+					player.vecY = jumpPower;
+					player.isJumping = true;
 				}
 
 				// 重力を適用
-				velocityY += GRAVITY;
-				playerY += velocityY;
+				player.vecY += gravity;
+				player.centerPos.y += player.vecY;
 
 				// 地面との接触判定
-				if (playerY + playerH >= groundY) {
-					playerY = groundY - playerH;
-					velocityY = 0;
-					isJumping = false;
+				if (player.centerPos.y+ player.height >= groundY) {
+					player.centerPos.y = groundY - player.height;
+					player.vecY = 0;
+					player.isJumping = false;
 				}
 
 				// 障害物の移動（左に流れる）
-				obsX -= SCROLL_SPEED;
+				obsX -= scrollSpeed;
 				if (obsX + obsW < 0) {
 					obsX = float(1280 + rand() % 300); // 画面右から再出現
 				}
 
 				// 当たり判定（AABB）
-				if (playerX < obsX + obsW &&
-					playerX + playerW > obsX &&
-					playerY < obsY + obsH &&
-					playerY + playerH > obsY) {
+				if (player.centerPos.x < obsX + obsW &&
+					player.centerPos.x + player.width > obsX &&
+					player.centerPos.y < obsY + obsH &&
+					player.centerPos.y + player.height > obsY) {
 					isGameOver = true;
 				}
 			}
@@ -208,10 +252,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				// Rキーでリトライ
 				if (keys[DIK_R] && !preKeys[DIK_R]) {
 					isGameOver = false;
-					playerX = 200;
-					playerY = 600;
+					player.centerPos.x = 200;
+					player.centerPos.y = 600;
 					obsX = 1000;
-					velocityY = 0;
+					player.vecY = 0;
 				}
 
 				// ESCキーでタイトルに戻る
@@ -254,7 +298,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Novice::DrawBox(0, (int)groundY, 1280, 720 - (int)groundY, 0.0f, 0x505050FF, kFillModeSolid);
 
 			// プレイヤー（赤）と障害物（黒）
-			Novice::DrawBox((int)playerX, (int)playerY, (int)playerW, (int)playerH, 0.0f, 0xFF0000FF, kFillModeSolid);
+			Novice::DrawBox((int)player.centerPos.x, (int)player.centerPos.y, (int)player.width, (int)player.height, 0.0f, 0xFF0000FF, kFillModeSolid);
 			Novice::DrawBox((int)obsX, (int)obsY, (int)obsW, (int)obsH, 0.0f, 0x000000FF, kFillModeSolid);
 
 			// ゲームオーバー表示
