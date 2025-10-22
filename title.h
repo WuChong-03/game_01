@@ -30,5 +30,20 @@ inline void DrawTitle(const Title& title) {
     const float TITLE_H = 200.0f;
     int drawX = static_cast<int>(title.x - (TITLE_W * (title.scale - 1) / 2));
     int drawY = static_cast<int>(title.y - (TITLE_H * (title.scale - 1) / 2));
-    Novice::DrawSprite(drawX, drawY, title.texture, title.scale, title.scale, 0.0f, 0xFFFFFFFF);
+
+    // 🔹 往左倾斜（-5度）
+    const float tiltAngle = -10.0f * (3.14159265f / 180.0f);
+
+    Novice::DrawSprite(
+        drawX,
+        drawY,
+        title.texture,
+        title.scale,
+        title.scale,
+        tiltAngle,  // ← 加上旋转
+        0xFFFFFFFF
+    );
 }
+
+
+

@@ -16,9 +16,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int texTitle = Novice::LoadTexture("./Resources/title.png");
     int bgFar = Novice::LoadTexture("./Resources/bg_far.png");
     int bgNear = Novice::LoadTexture("./Resources/bg_near.png");
+    int bgFloor = Novice::LoadTexture("./Resources/floor.png"); 
+
+
 
     Background bg;
-    InitBackground(bg, bgFar, bgNear);
+    InitBackground(bg, bgFar, bgNear, bgFloor); 
 
     Button btn[3];
     InitButton(btn[0], 850, 400, 280, 63, texStart);
@@ -26,7 +29,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     InitButton(btn[2], 850, 500, 280, 63, texExit);
 
     Title title;
-    InitTitle(title, texTitle, 120, 100);
+    InitTitle(title, texTitle, 80, 108);
 
     int selected = 1;
 
