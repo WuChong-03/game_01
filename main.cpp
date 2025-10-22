@@ -173,8 +173,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	float groundY = 650;                  // 地面の高さ
 	bool isGameOver = false;              // ゲームオーバーかどうか
 
-	const float gravity = 0.8f;           // 重力
-	const float jumpPower = -18.0f;      // ジャンプ力
+	const float gravity = 1.2f;           // 重力
+	const float jumpPower = -24.0f;      // ジャンプ力
 
 	float playTime = 0.0f;
 	float scrollSpeed = 6.0f;      // スクロール速度
