@@ -173,9 +173,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	float groundY = 650;                  // 地面の高さ
 	bool isGameOver = false;              // ゲームオーバーかどうか
 
-	const float gravity = 0.6f;           // 重力
+	const float gravity = 0.8f;           // 重力
 	const float jumpPower = -18.0f;      // ジャンプ力
-	const float scrollSpeed = 6.0f;      // スクロール速度
+
+	float playTime = 0.0f;
+	float scrollSpeed = 6.0f;      // スクロール速度
+	const float maxScrollSpeed = 64.0f;	//スクロール最高速度
+	const float baseAccel = 0.2f;
 
 	int playerHandle = Novice::LoadTexture("./NoviceResources/white1x1.png");
 	int obsHandle = Novice::LoadTexture("./NoviceResources/white1x1.png");
@@ -239,6 +243,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// プレイ中
 			if (!isGameOver) {
 
+				playTime += 1.0f / 60.0f;
+
 				// スペースでジャンプ
 				if (keys[DIK_SPACE] && !preKeys[DIK_SPACE] && !player.isJumping) {
 					player.vecY = jumpPower;
@@ -249,6 +255,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				player.vecY += gravity;
 				player.centerPos.y += player.vecY;
 
+				//プレイヤーの座標更新
 				player.cornersPos = {
 					{player.centerPos.x - player.width / 2,player.centerPos.y - player.height / 2},
 					{player.centerPos.x + player.width / 2,player.centerPos.y - player.height / 2},
@@ -263,12 +270,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					player.isJumping = false;
 				}
 
+				float startSpeed = fmin(10.0f + playTime * 0.3f, maxScrollSpeed * 0.8f); // 初速
+				float accel = baseAccel + playTime * 0.005f;							 //加速度
+
+				//現在速度の更新
+				scrollSpeed += accel;
+				if (scrollSpeed > maxScrollSpeed) {
+					scrollSpeed = maxScrollSpeed;
+				}
+
 				// 障害物の移動（左に流れる）
 				obs.pos.leftTop.x -= scrollSpeed;
 				if (obs.pos.leftTop.x + obs.width < 0) {
 					obs.pos.leftTop.x = float(1280 + rand() % 300); // 画面右から再出現
+					scrollSpeed = startSpeed;
 				}
 
+				//障害物の座標更新
 				obs.pos = {
 					.leftTop = {obs.pos.leftTop.x,obs.pos.leftTop.y},
 					.rightTop = {obs.pos.leftTop.x + obs.width,obs.pos.leftTop.y},
@@ -314,6 +332,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						{1050,700}
 					};
 					player.vecY = 0;
+					playTime = 0.0f;
+					scrollSpeed = 6.0f;
 				}
 
 				// ESCキーでタイトルに戻る
@@ -356,13 +376,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Novice::DrawBox(0, (int)groundY, 1280, 720 - (int)groundY, 0.0f, 0x505050FF, kFillModeSolid);
 
 			// プレイヤー（赤）と障害物（黒）
-			Novice::DrawQuad(
+			Novice::DrawQuad( //プレイヤー
 				(int)player.cornersPos.leftTop.x, (int)player.cornersPos.leftTop.y,
 				(int)player.cornersPos.rightTop.x, (int)player.cornersPos.rightTop.y,
 				(int)player.cornersPos.leftBottom.x, (int)player.cornersPos.leftBottom.y,
 				(int)player.cornersPos.rightBottom.x, (int)player.cornersPos.rightBottom.y,
 				0, 0, (int)player.width, (int)player.height, playerHandle, RED);
-			Novice::DrawQuad(
+			Novice::DrawQuad( //障害物
 				(int)obs.pos.leftTop.x, (int)obs.pos.leftTop.y,
 				(int)obs.pos.rightTop.x, (int)obs.pos.rightTop.y,
 				(int)obs.pos.leftBottom.x, (int)obs.pos.leftBottom.y,
