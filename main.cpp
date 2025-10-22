@@ -1,150 +1,148 @@
 #include <Novice.h>
 #include <cmath>
+#include <cstring> // memcpy 需要这个头文件
 
-const char kWindowTitle[] = "タイトル画面（背景スクロール付き）";
+const char kWindowTitle[] = "タイトル付きメニュー（タイトル中心拡大 + ボタン右拡大 + 選択色変更）";
 
-enum Scene { TITLE, PLAY, CLEAR, END };
+static inline float Lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
 
-float Lerp(float a, float b, float t) { return a + (b - a) * t; }
+struct Button {
+    float x, y;          // 左对齐位置
+    float w, h;          // 原始宽高
+    float scale;         // 当前缩放
+    float targetScale;   // 目标缩放
+    int texture;         // 贴图句柄
+};
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Novice::Initialize(kWindowTitle, 1280, 720);
-    char keys[256] = { 0 };
-    char preKeys[256] = { 0 };
+    char keys[256]{}, preKeys[256]{};
 
-    Scene currentScene = TITLE;
-
-    //=============================
-    // 背景画像の読み込み
-    //=============================
-    int bgFarTex = Novice::LoadTexture("./bg_far.png");   // 遠景（例：空・ビル影）
-    int bgNearTex = Novice::LoadTexture("./bg_near.png"); // 近景（例：地面・街並み）
-
+    //--------------------------------
+    // 背景加载
+    //--------------------------------
+    int bgFar = Novice::LoadTexture("./Resources/bg_far.png");
+    int bgNear = Novice::LoadTexture("./Resources/bg_near.png");
     float bgFarX = 0.0f;
     float bgNearX = 0.0f;
+    const float FAR_SPEED = 0.5f;
+    const float NEAR_SPEED = 2.0f;
 
-    const float FAR_SPEED = 1.0f;   // 遠景のスクロール速度
-    const float NEAR_SPEED = 3.0f;  // 近景のスクロール速度
+    //--------------------------------
+    // 按钮参数
+    //--------------------------------
+    const float BASE_W = 280.0f;
+    const float BASE_H = 63.0f;
 
-    //=============================
-    // タイトル用変数
-    //=============================
-    const int buttonCount = 3;
-    const char* buttonNames[buttonCount] = { "ゲーム開始", "操作説明", "終了" };
+    //--------------------------------
+    // 贴图加载
+    //--------------------------------
+    int texStart = Novice::LoadTexture("./Resources/button_start.png");
+    int texHowTo = Novice::LoadTexture("./Resources/button_howToPlay.png");
+    int texExit = Novice::LoadTexture("./Resources/button_exit.png");
+    int texTitle = Novice::LoadTexture("./Resources/title.png");
 
-    int selectedIndex = 0;
-    float baseY = 240.0f;
-    float spacing = 120.0f;
-    float scrollY = 0.0f;
-    float targetY = 0.0f;
-    float scale[buttonCount] = { 1.0f, 1.0f, 1.0f };
-    float scaleTarget[buttonCount] = { 1.2f, 1.0f, 1.0f };
+    //--------------------------------
+    // 初始化按钮
+    //--------------------------------
+    Button btn[3] = {
+        {850.0f, 400.0f, BASE_W, BASE_H, 0.7f, 0.7f, texStart},
+        {850.0f, 450.0f, BASE_W, BASE_H, 1.0f, 1.0f, texHowTo},
+        {850.0f, 500.0f, BASE_W, BASE_H, 0.7f, 0.7f, texExit}
+    };
 
-    bool showHowTo = false;
+    int selected = 1;
+    float time = 0.0f;
 
+    //--------------------------------
+    // 主循环
+    //--------------------------------
     while (Novice::ProcessMessage() == 0) {
         Novice::BeginFrame();
         memcpy(preKeys, keys, 256);
         Novice::GetHitKeyStateAll(keys);
 
-        //=============================
-        // 更新処理
-        //=============================
-        switch (currentScene) {
-        case TITLE:
-            // 背景スクロール更新（ループ）
-            bgFarX -= FAR_SPEED;
-            bgNearX -= NEAR_SPEED;
-            if (bgFarX <= -1280) bgFarX += 1280;
-            if (bgNearX <= -1280) bgNearX += 1280;
+        //--------------------------------
+        // 输入处理
+        //--------------------------------
+        if (keys[DIK_W] && !preKeys[DIK_W]) selected = (selected + 2) % 3;
+        if (keys[DIK_S] && !preKeys[DIK_S]) selected = (selected + 1) % 3;
 
-            // 上下/W/Sキーで選択
-            if ((keys[DIK_UP] && !preKeys[DIK_UP]) || (keys[DIK_W] && !preKeys[DIK_W])) {
-                selectedIndex--;
-                if (selectedIndex < 0) selectedIndex = buttonCount - 1;
-            }
-            if ((keys[DIK_DOWN] && !preKeys[DIK_DOWN]) || (keys[DIK_S] && !preKeys[DIK_S])) {
-                selectedIndex++;
-                if (selectedIndex >= buttonCount) selectedIndex = 0;
-            }
+        //--------------------------------
+        // 背景更新（循环滚动）
+        //--------------------------------
+        bgFarX -= FAR_SPEED;
+        bgNearX -= NEAR_SPEED;
+        if (bgFarX <= -1280) bgFarX = 0;
+        if (bgNearX <= -1280) bgNearX = 0;
 
-            // スクロール位置のLerp
-            targetY = selectedIndex * spacing;
-            scrollY = Lerp(scrollY, targetY, 0.15f);
-
-            // スケールLerp
-            for (int i = 0; i < buttonCount; ++i) {
-                scaleTarget[i] = (i == selectedIndex) ? 1.2f : 1.0f;
-                scale[i] = Lerp(scale[i], scaleTarget[i], 0.15f);
-            }
-
-            // 決定
-            if (keys[DIK_SPACE] && !preKeys[DIK_SPACE]) {
-                if (selectedIndex == 0) currentScene = PLAY;
-                else if (selectedIndex == 1) showHowTo = !showHowTo;
-                else if (selectedIndex == 2) { Novice::Finalize(); return 0; }
-            }
-            break;
-
-        case PLAY:
-            if (keys[DIK_SPACE] && !preKeys[DIK_SPACE]) currentScene = CLEAR;
-            break;
-
-        case CLEAR:
-            if (keys[DIK_SPACE] && !preKeys[DIK_SPACE]) currentScene = END;
-            break;
-
-        case END:
-            if (keys[DIK_SPACE] && !preKeys[DIK_SPACE]) currentScene = TITLE;
-            break;
+        //--------------------------------
+        // 按钮缩放更新
+        //--------------------------------
+        for (int i = 0; i < 3; i++) {
+            btn[i].targetScale = (i == selected) ? 1.0f : 0.7f;
+            btn[i].scale = Lerp(btn[i].scale, btn[i].targetScale, 0.25f);
         }
 
-        //=============================
-        // 描画処理
-        //=============================
-        // 背景（2枚でループスクロール）
-        for (int i = 0; i < 2; i++) {
-            Novice::DrawSprite((int)bgFarX + 1280 * i, 0, bgFarTex, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
-            Novice::DrawSprite((int)bgNearX + 1280 * i, 0, bgNearTex, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
+        //--------------------------------
+        // 标题波动动画
+        //--------------------------------
+        time += 0.30f;
+        const float AMP_SCALE = 0.04f;
+        const float AMP_FLOAT = 3.0f;
+        float titleScale = 1.0f + AMP_SCALE * sinf(time);
+        float titleY = 100.0f + AMP_FLOAT * sinf(time + 1.57f);
+        int titleX = 120;
+
+        //--------------------------------
+        // 背景绘制
+        //--------------------------------
+        Novice::DrawSprite(int(bgFarX), 0, bgFar, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
+        Novice::DrawSprite(int(bgFarX + 1280), 0, bgFar, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
+        Novice::DrawSprite(int(bgNearX), 0, bgNear, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
+        Novice::DrawSprite(int(bgNearX + 1280), 0, bgNear, 1.0f, 1.0f, 0.0f, 0xFFFFFFFF);
+
+        //--------------------------------
+        // 绘制标题（中心放大）
+        //--------------------------------
+        const float TITLE_W = 600.0f;
+        const float TITLE_H = 200.0f;
+        int titleDrawX = int(titleX - (TITLE_W * (titleScale - 1) / 2));
+        int titleDrawY = int(titleY - (TITLE_H * (titleScale - 1) / 2));
+        Novice::DrawSprite(titleDrawX, titleDrawY, texTitle, titleScale, titleScale, 0.0f, 0xFFFFFFFF);
+
+        //--------------------------------
+        // 绘制按钮（选中变色）
+        //--------------------------------
+        for (int i = 0; i < 3; i++) {
+            float scaledH = btn[i].h * btn[i].scale;
+            int btnDrawX = int(btn[i].x);
+            int btnDrawY = int(btn[i].y - scaledH / 2);
+
+            // 🎨 颜色定义
+            unsigned int unselectedColor = 0xFFF2FC32; 
+            unsigned int selectedColor = 0xF2FC32FF;
+
+            unsigned int color = (i == selected) ? selectedColor : unselectedColor;
+
+            Novice::DrawSprite(
+                btnDrawX,
+                btnDrawY,
+                btn[i].texture,
+                btn[i].scale,
+                btn[i].scale,
+                0.0f,
+                color
+            );
         }
 
-        // タイトルロゴ
-        Novice::DrawBox(100, 80, 420, 120, 0.0f, 0x88CCFFFF, kFillModeSolid);
-        Novice::ScreenPrintf(120, 130, "ゲームタイトル ロゴ（画像予定）");
-
-        if (currentScene == TITLE) {
-            // 右側ボタン列
-            for (int i = 0; i < buttonCount; ++i) {
-                float y = baseY + i * spacing - scrollY;
-                float s = scale[i];
-                int color = (i == selectedIndex) ? 0xFFFFFFFF : 0xCCCCCCFF;
-
-                int w = int(240 * s);
-                int h = int(64 * s);
-                int x = 980 - w / 2;
-                int by = (int)(y - h / 2);
-
-                Novice::DrawBox(x, by, w, h, 0.0f, color, kFillModeSolid);
-                Novice::ScreenPrintf(x + 60, by + 20, "%s", buttonNames[i]);
-            }
-
-            // 選択枠（固定一番上）
-            Novice::DrawBox(980 - 120, int(baseY) - 32 - 4, 240 + 8, 64 + 8, 0.0f, 0xFFDD00AA, kFillModeWireFrame);
-
-            // 操作説明
-            if (showHowTo) {
-                Novice::DrawBox(120, 260, 440, 280, 0.0f, 0x000000AA, kFillModeSolid);
-                Novice::ScreenPrintf(150, 300, "↑/↓ or W/S：選択移動");
-                Novice::ScreenPrintf(150, 340, "SPACE：決定");
-            }
-        }
-        else {
-            Novice::ScreenPrintf(540, 300, "【PLAY/他シーン】");
-        }
-
+        //--------------------------------
+        // 调试显示
+        //--------------------------------
+        Novice::ScreenPrintf(40, 50, "選択中: %d", selected);
         Novice::EndFrame();
-
-        if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) break;
     }
 
     Novice::Finalize();
