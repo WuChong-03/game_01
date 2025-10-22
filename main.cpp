@@ -156,8 +156,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	};
 
 	Object obs = {
-		.width = 50,
-		.height = 100,
+		.width = 128,
+		.height = 128,
 		.isHitX = false,
 		.isHitY = false,
 		.isSpawned = false
