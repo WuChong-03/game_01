@@ -6,7 +6,8 @@
 // 定数（ウィンドウタイトルなど）
 //--------------------------------------------
 const char kWindowTitle[] = "ランゲーム（Title + Game Scene Integrated）";
-
+const int kWindowWidth = 1280;
+const int kWindowHeight = 720;
 //--------------------------------------------
 // シーンの定義
 //--------------------------------------------
@@ -88,23 +89,23 @@ typedef struct Corners {
 typedef struct Player {
 	Vector2 centerPos;
 	Corners cornersPos;
+	float vecX;
 	float vecY;
 	float width;
 	float height;
 	bool isJumping;
-	bool isHit;
+	bool onGround;
 } Player;
 
-typedef struct Object {
-	Corners pos;
-	float width;
-	float height;
-	int speed;
-	int startDelay;
-	bool isHitX = false;
-	bool isHitY = false;
-	bool isSpawned = false;
-}Object;
+struct Ground {
+	float x;
+	float y;
+	int blockCount;
+	bool isGround;
+};
+
+const float kHeights[] = { 400.0f, 500.0f, 600.0f,700.0f };
+const int kNumHeights = sizeof(kHeights) / sizeof(kHeights[0]);
 
 //--------------------------------------------
 // メイン関数（エントリーポイント）
@@ -141,11 +142,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//--------------------------------------------
 	Player player = {
 		.centerPos = {225,625},
+		.vecX = 0,
 		.vecY = 0,
-		.width = 50,
-		.height = 50,
-		.isJumping = false,
-		.isHit = false
+		.width = 64,
+		.height = 64,
+		.isJumping = false
 	};
 
 	player.cornersPos = {
@@ -155,34 +156,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			{player.centerPos.x + player.width / 2,player.centerPos.y + player.height / 2}
 	};
 
-	Object obs = {
-		.width = 128,
-		.height = 128,
-		.isHitX = false,
-		.isHitY = false,
-		.isSpawned = false
-	};
-
-	obs.pos = {
-		{1000,600},
-		{1050,600},
-		{1000,700},
-		{1050,700}
-	};
-
-	float groundY = 650;                  // 地面の高さ
 	bool isGameOver = false;              // ゲームオーバーかどうか
 
 	const float gravity = 1.2f;           // 重力
 	const float jumpPower = -24.0f;      // ジャンプ力
 
 	float playTime = 0.0f;
-	float scrollSpeed = 6.0f;      // スクロール速度
-	const float maxScrollSpeed = 64.0f;	//スクロール最高速度
-	const float baseAccel = 0.2f;
+	float scrollSpeed = 6.0f;
+	const float kStageTimes[3] = { 60.0f, 120.0f, 180.0f };    // 各段階の開始時間
+	const float kScrollSpeeds[4] = { 6.0f, 6.0f, 18.0f, 36.0f };   // 各段階のスクロール速度
 
+	// 難易度レベル
+	// 0 = TITLE用（穴なし）、1 = easy、2 = normal、3 = hard
+	int difficultyLevel = 0;
+
+
+	const float kBlockWidth = 128.0f;
+	const float kBlockHeight = 128.0f;
+	const int kGroundBlocks = 5;
+	const int kHoleBlocks[4] = { 0, 1, 2, 3 };
+	const int kNumGrounds = 4;
+
+	Ground grounds[kNumGrounds];
+
+	int groundTexHandle = Novice::LoadTexture("./Resources/floor-export.png");
 	int playerHandle = Novice::LoadTexture("./NoviceResources/white1x1.png");
-	int obsHandle = Novice::LoadTexture("./NoviceResources/white1x1.png");
 
 	//--------------------------------------------
 	// メインループ
@@ -217,12 +215,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					currentScene = PLAY;  // ゲーム開始
 					isGameOver = false;
 					player.centerPos.x = 225; player.centerPos.y = 625;
-					obs.pos = {
-						{1000,600},
-						{1050,600},
-						{1000,700},
-						{1050,700}
-					};
+					difficultyLevel = 1;
+					for (int i = 0; i < kNumGrounds; i++) {
+						grounds[i].x = i * kBlockWidth * (kGroundBlocks + kHoleBlocks[difficultyLevel]); // 穴2ブロック分を想定
+						if (i <= 3) {
+							grounds[i].y = player.centerPos.y + player.height / 2;
+						}
+						else {
+							float prevY = grounds[i - 1].y;
+							float newY;
+							do {
+								newY = kHeights[rand() % kNumHeights];
+							} while (fabs(newY - prevY) < 120.0f); // 近すぎ回避
+							grounds[i].y = newY;
+						}
+						grounds[i].blockCount = kGroundBlocks;
+						grounds[i].isGround = true;
+					}
 					break;
 				case 1: // How to Play
 					showHowTo = !showHowTo; // 操作説明ウィンドウの表示切替
@@ -245,15 +254,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 				playTime += 1.0f / 60.0f;
 
+
 				// スペースでジャンプ
 				if (keys[DIK_SPACE] && !preKeys[DIK_SPACE] && !player.isJumping) {
 					player.vecY = jumpPower;
 					player.isJumping = true;
 				}
 
+				// 最大落下位置
+				const float kMaxFallY = kWindowHeight + 100.0f;
+
 				// 重力を適用
 				player.vecY += gravity;
 				player.centerPos.y += player.vecY;
+
+				// 落下上限チェック
+				if (player.centerPos.y > kMaxFallY) {
+					player.centerPos.y = kMaxFallY;
+					player.vecY = 0; // 落下速度リセット
+				}
 
 				//プレイヤーの座標更新
 				player.cornersPos = {
@@ -263,57 +282,81 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					{player.centerPos.x + player.width / 2,player.centerPos.y + player.height / 2}
 				};
 
-				// 地面との接触判定
-				if (player.centerPos.y + player.height / 2 >= groundY) {
-					player.centerPos.y = groundY - player.height / 2;
-					player.vecY = 0;
-					player.isJumping = false;
+				// 現在のスクロール段階を決定
+				int stageIndex = 0;
+				for (int i = 0; i < 3; i++) {
+					if (playTime >= kStageTimes[i]) {
+						stageIndex = i;
+					}
 				}
 
-				float startSpeed = fmin(10.0f + playTime * 0.3f, maxScrollSpeed * 0.8f); // 初速
-				float accel = baseAccel + playTime * 0.005f;							 //加速度
+				// スクロール速度を段階に応じて設定
+				scrollSpeed = kScrollSpeeds[difficultyLevel];
 
-				//現在速度の更新
-				scrollSpeed += accel;
-				if (scrollSpeed > maxScrollSpeed) {
-					scrollSpeed = maxScrollSpeed;
+				for (int i = 0; i < kNumGrounds; i++) {
+					grounds[i].x -= scrollSpeed;
+
+					// 左に消えたら右端に再配置
+					if (grounds[i].x + kBlockWidth * kGroundBlocks < 0) {
+						// 右端にある足場を探す
+						float maxX = grounds[0].x;
+						for (int j = 1; j < kNumGrounds; j++) {
+							if (grounds[j].x > maxX) {
+								maxX = grounds[j].x;
+							}
+						}
+
+						// 高さをランダムに変える（似すぎないように）
+						float newY;
+						do {
+							newY = kHeights[rand() % kNumHeights];
+						} while (fabs(newY - grounds[i].y) < 120.0f); // 近すぎは避ける
+
+						// 最後の穴の後に再出現
+						grounds[i].x = maxX + kBlockWidth * (kGroundBlocks + 2);
+						grounds[i].y = newY;
+					}
 				}
 
-				// 障害物の移動（左に流れる）
-				obs.pos.leftTop.x -= scrollSpeed;
-				if (obs.pos.leftTop.x + obs.width < 0) {
-					obs.pos.leftTop.x = float(1280 + rand() % 300); // 画面右から再出現
-					scrollSpeed = startSpeed;
+				// 地面との接触（上からだけ見る）
+				bool onGround = false;
+
+				for (int i = 0; i < kNumGrounds; i++) {
+					for (int j = 0; j < grounds[i].blockCount; j++) {
+						float blockX = grounds[i].x + j * kBlockWidth;
+						float blockY = grounds[i].y;
+
+						// 横範囲チェック
+						if (player.centerPos.x + player.width / 2 > blockX &&
+							player.centerPos.x - player.width / 2 < blockX + kBlockWidth) {
+
+							// 上から着地
+							if (player.centerPos.y + player.height / 2 >= blockY &&
+								player.centerPos.y < blockY) {
+								player.centerPos.y = blockY - player.height / 2;
+								player.vecY = 0;
+								player.isJumping = false;
+								onGround = true;
+							}
+						}
+					}
 				}
 
-				//障害物の座標更新
-				obs.pos = {
-					.leftTop = {obs.pos.leftTop.x,obs.pos.leftTop.y},
-					.rightTop = {obs.pos.leftTop.x + obs.width,obs.pos.leftTop.y},
-					.leftBottom = {obs.pos.leftTop.x,obs.pos.leftTop.y + obs.height},
-					.rightBottom = {obs.pos.leftTop.x + obs.width,obs.pos.leftTop.y + obs.height}
-				};
+				// 足場の上にいない → 落下扱い
+				if (!onGround) {
+					player.isJumping = true;
+				}
 
-				//x座標の判定
-				if (player.cornersPos.rightBottom.x >= obs.pos.leftTop.x &&
-					player.cornersPos.leftTop.x <= obs.pos.rightBottom.x) {
-					obs.isHitX = true;
+				// プレイヤーが地面より下がったらスクロール開始
+				if (player.centerPos.y > currentGroundY) {
+					for (int i = 0; i < kNumGrounds; i++) {
+						grounds[i].x -= scrollSpeed;
+					}
 				}
-				else {
-					obs.isHitX = false;
-				}
-				//y座標の判定
-				if (player.cornersPos.leftBottom.y >= obs.pos.leftTop.y &&
-					player.cornersPos.leftTop.y <= obs.pos.leftBottom.y) {
-					obs.isHitY = true;
-				}
-				else {
-					obs.isHitY = false;
-				}
-				//当たり判定フラグの変更
-				if (obs.isHitX && obs.isHitY) {
-					isGameOver = true;
-				}
+
+				// 画面左端に出たらゲームオーバー
+				if (player.centerPos.x + player.width / 2 < 0) isGameOver = true;
+
 			}
 			else {
 				// Rキーでリトライ
@@ -324,12 +367,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						{player.centerPos.x + player.width / 2,player.centerPos.y - player.height / 2},
 						{player.centerPos.x - player.width / 2,player.centerPos.y + player.height / 2},
 						{player.centerPos.x + player.width / 2,player.centerPos.y + player.height / 2}
-					};
-					obs.pos = {
-						{1000,600},
-						{1050,600},
-						{1000,700},
-						{1050,700}
 					};
 					player.vecY = 0;
 					playTime = 0.0f;
@@ -373,7 +410,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		case PLAY:
 			// 背景と地面
 			Novice::DrawBox(0, 0, 1280, 720, 0.0f, 0x87CEFAFF, kFillModeSolid);
-			Novice::DrawBox(0, (int)groundY, 1280, 720 - (int)groundY, 0.0f, 0x505050FF, kFillModeSolid);
+			for (int i = 0; i < kNumGrounds; i++) {
+				for (int j = 0; j < grounds[i].blockCount; j++) {
+					float tileX = grounds[i].x + j * kBlockWidth;
+					float tileY = grounds[i].y;
+
+					// 足場は上端 tileY から画面下まで描画
+					Novice::DrawQuad(
+						(int)tileX, (int)tileY,        // 左上
+						(int)(tileX + kBlockWidth), (int)tileY,   // 右上
+						(int)tileX, kWindowHeight,     // 左下
+						(int)(tileX + kBlockWidth), kWindowHeight, // 右下
+						0, 0, (int)kBlockWidth, (int)kBlockHeight,
+						groundTexHandle,
+						WHITE
+					);
+				}
+			}
 
 			// プレイヤー（赤）と障害物（黒）
 			Novice::DrawQuad( //プレイヤー
@@ -382,12 +435,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				(int)player.cornersPos.leftBottom.x, (int)player.cornersPos.leftBottom.y,
 				(int)player.cornersPos.rightBottom.x, (int)player.cornersPos.rightBottom.y,
 				0, 0, (int)player.width, (int)player.height, playerHandle, RED);
-			Novice::DrawQuad( //障害物
-				(int)obs.pos.leftTop.x, (int)obs.pos.leftTop.y,
-				(int)obs.pos.rightTop.x, (int)obs.pos.rightTop.y,
-				(int)obs.pos.leftBottom.x, (int)obs.pos.leftBottom.y,
-				(int)obs.pos.rightBottom.x, (int)obs.pos.rightBottom.y,
-				0, 0, (int)obs.width, (int)obs.height, obsHandle, BLACK);
 
 			// ゲームオーバー表示
 			if (isGameOver) {
