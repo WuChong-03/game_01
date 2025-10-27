@@ -8,18 +8,14 @@
 
 const char kWindowTitle[] = "Run Game (Seamless Title -> Play)";
 
-// 游戏状态（速度/逻辑）
 enum GameState { READY, PLAY };
-// UI 状态（叠加在 READY 上）
 enum UIState { MENU, HOWTO };
 
 static inline float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
-//—— Floor 相关 ——//
 constexpr int FLOOR_H = 260;
 constexpr float GROUND_Y = 720.0f - FLOOR_H;
 
-// 障碍物结构
 struct Obstacle {
     Corners pos;
     float w, h;
@@ -34,6 +30,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Novice::Initialize(kWindowTitle, 1280, 720);
     char keys[256]{}, preKeys[256]{};
 
+    // ★ 音效加载
+    int seBgm = Novice::LoadAudio("./Resources/sound/bgm_gameplay.wav");
+    int seJumpUp = Novice::LoadAudio("./Resources/sound/jump_start.wav");
+    int seLand = Novice::LoadAudio("./Resources/sound/jump_land.wav");
+    int seUiMove = Novice::LoadAudio("./Resources/sound/ui_button.wav");
+    int seUiStart = Novice::LoadAudio("./Resources/sound/ui_start.wav");
+
+    // ★ Title开始就播放BGM（循环播放: soundHandleId=1,volume=255）
+    Novice::PlayAudio(seBgm, true, 255);
+
     // 贴图
     int texStart = Novice::LoadTexture("./Resources/button_start.png");
     int texHow = Novice::LoadTexture("./Resources/button_howToPlay.png");
@@ -44,11 +50,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int bgNear = Novice::LoadTexture("./Resources/bg_near.png");
     int bgFloor = Novice::LoadTexture("./Resources/floor.png");
 
-    // 背景
     Background bg;
     InitBackground(bg, bgFar, bgNear, bgFloor);
 
-    // Title & Buttons
     Title title;
     InitTitle(title, texTitle, 120.0f, 100.0f);
     Button btn[3];
@@ -57,12 +61,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     InitButton(btn[2], texExit, 850.0f, 500.0f);
     int selected = 1;
 
-    // 玩家
     Player player;
     player.Init();
     player.Reset(225.0f, GROUND_Y - 25.0f);
 
-    // 障碍物
     Obstacle obs{ {}, 50.0f, 100.0f, false, false };
     float obsX = 1000.0f;
     float obsY = GROUND_Y - obs.h;
@@ -70,23 +72,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     bool isGameOver = false;
 
-    float playTime = 0.0f;
     float scrollSpeed = 6.0f;
     const float maxScrollSpeed = 64.0f;
     const float baseAccel = 0.05f;
     const float gravity = 1.2f;
     const float jumpPower = -24.0f;
 
+    const float STAGE2_SPEED = 15.0f;
+    const float STAGE3_SPEED = 35.0f;
     const float STAGE1_FACTOR = 1.0f;
     const float STAGE2_FACTOR = 1.6f;
     const float STAGE3_FACTOR = 2.2f;
-    const float STAGE2_SPEED = 15.0f;
-    const float STAGE3_SPEED = 35.0f;
-
     float bgSpeedFactor = STAGE1_FACTOR;
     float targetBgFactor = STAGE1_FACTOR;
     const float BG_LERP = 0.15f;
-
     const float FLY_T = 0.18f;
 
     GameState gameState = READY;
@@ -98,11 +97,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         Novice::GetHitKeyStateAll(keys);
 
         if (gameState == READY && uiState == MENU) {
-            if (keys[DIK_W] && !preKeys[DIK_W]) selected = (selected + 2) % 3;
-            if (keys[DIK_S] && !preKeys[DIK_S]) selected = (selected + 1) % 3;
+            if (keys[DIK_W] && !preKeys[DIK_W]) {
+                selected = (selected + 2) % 3;
+                Novice::PlayAudio(seUiMove, false, 200); // ★ UI移动音
+            }
+            if (keys[DIK_S] && !preKeys[DIK_S]) {
+                selected = (selected + 1) % 3;
+                Novice::PlayAudio(seUiMove, false, 200); // ★ UI移动音
+            }
 
             if (keys[DIK_RETURN] && !preKeys[DIK_RETURN]) {
                 if (selected == 0) {
+                    Novice::PlayAudio(seUiStart, false, 255); // ★ Start音
                     title.targetOffsetX = -800.0f;
                     for (int i = 0; i < 3; ++i) btn[i].targetOffsetX = +800.0f;
                     gameState = PLAY;
@@ -110,13 +116,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     player.Reset(225.0f, GROUND_Y - player.h / 2.0f);
                     obsX = 1000.0f;
                     obs.pos = MakeCorners(obsX, obsY, obs.w, obs.h);
-                    playTime = 0.0f;
                     scrollSpeed = 6.0f;
                     targetBgFactor = STAGE1_FACTOR;
                 }
                 else if (selected == 1) {
-                    title.targetOffsetX = -800.0f;
-                    for (int i = 0; i < 3; ++i) btn[i].targetOffsetX = +800.0f;
                     uiState = HOWTO;
                 }
                 else if (selected == 2) {
@@ -126,22 +129,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
         }
 
-        if (gameState == READY && uiState == HOWTO) {
-            if (keys[DIK_ESCAPE] && !preKeys[DIK_ESCAPE]) {
-                title.targetOffsetX = 0.0f;
-                for (int i = 0; i < 3; ++i) btn[i].targetOffsetX = 0.0f;
-                uiState = MENU;
-            }
-        }
-
         if (gameState == PLAY) {
             if (!isGameOver) {
-
-                // ✅ 玩家模块化更新
                 bool pressJump = keys[DIK_SPACE] && !preKeys[DIK_SPACE];
+                if (pressJump && !player.isJumping) {
+                    Novice::PlayAudio(seJumpUp, false, 230); // ★ 起跳音
+                }
+
+                bool wasAir = player.isJumping;
                 player.Update(pressJump, gravity, jumpPower, GROUND_Y);
 
-                // 障碍物移动
+                if (wasAir && !player.isJumping) {
+                    Novice::PlayAudio(seLand, false, 220); // ★ 落地音
+                }
+
                 scrollSpeed += baseAccel;
                 if (scrollSpeed > maxScrollSpeed) scrollSpeed = maxScrollSpeed;
 
@@ -151,23 +152,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
                 obs.pos = MakeCorners(obsX, obsY, obs.w, obs.h);
 
-                // ✅ 碰撞仍然完全使用 corners
                 obs.hitX = (player.corners.rb.x >= obs.pos.lt.x && player.corners.lt.x <= obs.pos.rb.x);
                 obs.hitY = (player.corners.lb.y >= obs.pos.lt.y && player.corners.lt.y <= obs.pos.lb.y);
                 if (obs.hitX && obs.hitY) isGameOver = true;
 
-                // 背景速度分段
-                if (scrollSpeed < STAGE2_SPEED) targetBgFactor = STAGE1_FACTOR;
-                else if (scrollSpeed < STAGE3_SPEED) targetBgFactor = STAGE2_FACTOR;
-                else targetBgFactor = STAGE3_FACTOR;
+                targetBgFactor =
+                    (scrollSpeed < STAGE2_SPEED) ? STAGE1_FACTOR :
+                    (scrollSpeed < STAGE3_SPEED) ? STAGE2_FACTOR : STAGE3_FACTOR;
             }
-            else {
-                if (keys[DIK_R] && !preKeys[DIK_R]) {
-                    gameState = READY;
-                    uiState = MENU;
-                    title.targetOffsetX = 0.0f;
-                    for (int i = 0; i < 3; ++i) btn[i].targetOffsetX = 0.0f;
-                }
+            else if (keys[DIK_R] && !preKeys[DIK_R]) {
+                Novice::PlayAudio(seUiMove, false, 200);
+                gameState = READY;
+                uiState = MENU;
+                title.targetOffsetX = 0.0f;
+                for (int i = 0; i < 3; ++i) btn[i].targetOffsetX = 0.0f;
             }
         }
 
@@ -201,11 +199,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
 
         if (gameState == PLAY) {
-
-            // ✅ 玩家动画绘制替代旧矩形
             player.Draw();
-
-            // 障碍仍旧矩形绘制（未确认贴图）
             int white1x1 = Novice::LoadTexture("./NoviceResources/white1x1.png");
             Novice::DrawQuad(
                 int(obs.pos.lt.x), int(obs.pos.lt.y),
@@ -214,7 +208,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 int(obs.pos.rb.x), int(obs.pos.rb.y),
                 0, 0, int(obs.w), int(obs.h), white1x1, 0x000000FF
             );
-
             Novice::ScreenPrintf(40, 40, "SPACE Jump");
             Novice::ScreenPrintf(40, 60, "Speed: %.1f", scrollSpeed);
 
