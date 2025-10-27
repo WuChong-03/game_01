@@ -20,6 +20,9 @@
     <ClCompile Include="C:\KamataEngine\Adapter\Novice.cpp">
       <Filter>KamataEngine\Adapter</Filter>
     </ClCompile>
+    <ClCompile Include="player.cpp">
+      <Filter>KamataEngine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="C:\KamataEngine\DirectXGame\audio\Audio.h">
@@ -106,5 +109,6 @@
     <ClInclude Include="button.h" />
     <ClInclude Include="bg.h" />
     <ClInclude Include="title.h" />
+    <ClInclude Include="player.h" />
   </ItemGroup>
 </Project>

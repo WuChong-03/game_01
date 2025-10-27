@@ -3,47 +3,44 @@
 #include <cmath>
 
 struct Title {
-    int texture;
+    int tex;
     float x, y;
-    float baseY;
-    float time;
+    float baseX, baseY;    // 原始坐标
     float scale;
+    float time;
+    float offsetX;
+    float targetOffsetX;
+    float tiltDeg;         // 倾斜角（度）
 };
 
-inline void InitTitle(Title& title, int tex, float x, float y) {
-    title.texture = tex;
-    title.x = x;
-    title.y = y;
-    title.baseY = y;
-    title.time = 0.0f;
-    title.scale = 1.0f;
+inline void InitTitle(Title& t, int tex, float x, float y) {
+    t.tex = tex;
+    t.baseX = t.x = x;
+    t.baseY = t.y = y;
+    t.scale = 1.0f;
+    t.time = 0.0f;
+    t.offsetX = 0.0f;
+    t.targetOffsetX = 0.0f;
+    t.tiltDeg = -5.0f; // ✅ 微微左倾（保持你的设定）
 }
 
-inline void UpdateTitle(Title& title) {
-    title.time += 0.3f;
-    title.scale = 1.0f + 0.04f * sinf(title.time);
-    title.y = title.baseY + 3.0f * sinf(title.time + 1.57f);
+inline void UpdateTitle(Title& t) {
+    // ✅ 呼吸 + 浮动（保持你的设定）
+    t.time += 0.20f;
+    t.scale = 1.0f + 0.05f * sinf(t.time);
+    t.y = t.baseY + 5.0f * sinf(t.time);
 }
 
-inline void DrawTitle(const Title& title) {
-    const float TITLE_W = 600.0f;
+inline void DrawTitle(const Title& t) {
+    // 以中心放大：用逻辑尺寸修正绘制起点
+    const float TITLE_W = 600.0f; // 你根据贴图实际宽高调
     const float TITLE_H = 200.0f;
-    int drawX = static_cast<int>(title.x - (TITLE_W * (title.scale - 1) / 2));
-    int drawY = static_cast<int>(title.y - (TITLE_H * (title.scale - 1) / 2));
 
-    // 🔹 往左倾斜（-5度）
-    const float tiltAngle = -10.0f * (3.14159265f / 180.0f);
+    int drawX = (int)(t.x + t.offsetX - (TITLE_W * (t.scale - 1) / 2));
+    int drawY = (int)(t.y - (TITLE_H * (t.scale - 1) / 2));
 
-    Novice::DrawSprite(
-        drawX,
-        drawY,
-        title.texture,
-        title.scale,
-        title.scale,
-        tiltAngle,  // ← 加上旋转
-        0xFFFFFFFF
-    );
+    // 角度（弧度）
+    float rad = t.tiltDeg * (3.1415926f / 180.0f);
+
+    Novice::DrawSprite(drawX, drawY, t.tex, t.scale, t.scale, rad, 0xFFFFFFFF);
 }
-
-
-

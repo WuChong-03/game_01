@@ -3,28 +3,36 @@
 #include <cmath>
 
 struct Button {
-    float x, y;
-    float w, h;
-    float scale;
-    float targetScale;
-    int texture;
+    float x{ 850.0f }, y{ 400.0f };
+    float w{ 280.0f }, h{ 63.0f };
+    float scale{ 0.7f };
+    float targetScale{ 0.7f };
+    int texture{ -1 };
+
+    // 水平飞行动画
+    float offsetX{ 0.0f };
+    float targetOffsetX{ 0.0f };
 };
 
-// 初始化
-inline void InitButton(Button& btn, float x, float y, float w, float h, int tex) {
-    btn = { x, y, w, h, 0.7f, 0.7f, tex };
+static inline float Lerp01(float a, float b, float t) { return a + (b - a) * t; }
+
+inline void InitButton(Button& b, int tex, float x, float y) {
+    b.texture = tex;
+    b.x = x; b.y = y;
+    b.w = 280.0f; b.h = 63.0f;
+    b.scale = b.targetScale = 0.7f;  // ✅ 未选中 0.7
+    b.offsetX = b.targetOffsetX = 0.0f;
 }
 
-// 更新缩放
-inline void UpdateButton(Button& btn, bool isSelected) {
-    btn.targetScale = isSelected ? 1.0f : 0.7f;
-    btn.scale += (btn.targetScale - btn.scale) * 0.25f;
+inline void UpdateButton(Button& b, bool selected) {
+    b.targetScale = selected ? 1.0f : 0.7f; // ✅ 选中 1.0
+    b.scale = Lerp01(b.scale, b.targetScale, 0.25f); // ✅ Lerp 0.25
 }
 
-// 绘制按钮（支持颜色）
-inline void DrawButton(const Button& btn, unsigned int color) {
-    float scaledH = btn.h * btn.scale;
-    int drawX = static_cast<int>(btn.x);
-    int drawY = static_cast<int>(btn.y - scaledH / 2);
-    Novice::DrawSprite(drawX, drawY, btn.texture, btn.scale, btn.scale, 0.0f, color);
+inline void DrawButton(const Button& b, unsigned int colorRGBA) {
+    float scaledH = b.h * b.scale;
+    int drawX = int(b.x + b.offsetX);
+    int drawY = int(b.y - scaledH / 2.0f);
+
+    Novice::DrawSprite(drawX, drawY, b.texture, b.scale, b.scale, 0.0f, colorRGBA);
 }
