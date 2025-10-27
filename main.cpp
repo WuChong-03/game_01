@@ -89,7 +89,6 @@ typedef struct Corners {
 typedef struct Player {
 	Vector2 centerPos;
 	Corners cornersPos;
-	float vecX;
 	float vecY;
 	float width;
 	float height;
@@ -142,7 +141,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//--------------------------------------------
 	Player player = {
 		.centerPos = {225,625},
-		.vecX = 0,
 		.vecY = 0,
 		.width = 64,
 		.height = 64,
@@ -158,13 +156,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	bool isGameOver = false;              // ゲームオーバーかどうか
 
-	const float gravity = 1.2f;           // 重力
-	const float jumpPower = -24.0f;      // ジャンプ力
+	const float gravity = 1.5f;           // 重力
+	const float jumpPower = -37.0f;      // ジャンプ力
 
 	float playTime = 0.0f;
 	float scrollSpeed = 6.0f;
-	const float kStageTimes[3] = { 60.0f, 120.0f, 180.0f };    // 各段階の開始時間
-	const float kScrollSpeeds[4] = { 6.0f, 6.0f, 18.0f, 36.0f };   // 各段階のスクロール速度
+	const float kStageTimes[4] = { 0.0f,0.0f, 60.0f, 120.0f };    // 各段階の開始時間
+	const float kScrollSpeeds[4] = { 10.0f, 10.0f, 20.0f, 40.0f };   // 各段階のスクロール速度
 
 	// 難易度レベル
 	// 0 = TITLE用（穴なし）、1 = easy、2 = normal、3 = hard
@@ -206,6 +204,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (keys[DIK_DOWN] && !preKeys[DIK_DOWN]) {
 				selectedIndex++;
 				if (selectedIndex >= buttonCount) selectedIndex = 0;
+			}
+
+			//地面スクロール
+			for (int i = 0; i < kNumGrounds; i++) {
+				grounds[i].x -= scrollSpeed;
+
+				// 左に消えたら右端に再配置
+				if (grounds[i].x + kBlockWidth * kGroundBlocks < 0) {
+					// 右端にある足場を探す
+					float maxX = grounds[0].x;
+					for (int j = 1; j < kNumGrounds; j++) {
+						if (grounds[j].x > maxX) {
+							maxX = grounds[j].x;
+						}
+					}
+					grounds[i].y = player.centerPos.y + player.height / 2;
+					// 最後の穴の後に再出現
+					grounds[i].x = maxX + kBlockWidth * (kGroundBlocks + 2);
+				}
 			}
 
 			// エンターキーで決定
@@ -253,7 +270,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (!isGameOver) {
 
 				playTime += 1.0f / 60.0f;
-
+				if (playTime >= kStageTimes[3]) {
+					difficultyLevel = 3; // Hard
+				}
+				else if (playTime >= kStageTimes[2]) {
+					difficultyLevel = 2; // Normal
+				}
+				else if (playTime >= kStageTimes[1]) {
+					difficultyLevel = 1; // Easy
+				}
 
 				// スペースでジャンプ
 				if (keys[DIK_SPACE] && !preKeys[DIK_SPACE] && !player.isJumping) {
@@ -282,14 +307,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					{player.centerPos.x + player.width / 2,player.centerPos.y + player.height / 2}
 				};
 
-				// 現在のスクロール段階を決定
-				int stageIndex = 0;
-				for (int i = 0; i < 3; i++) {
-					if (playTime >= kStageTimes[i]) {
-						stageIndex = i;
-					}
-				}
-
 				// スクロール速度を段階に応じて設定
 				scrollSpeed = kScrollSpeeds[difficultyLevel];
 
@@ -315,6 +332,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						// 最後の穴の後に再出現
 						grounds[i].x = maxX + kBlockWidth * (kGroundBlocks + 2);
 						grounds[i].y = newY;
+					}
+				}
+
+				//落下判定
+				for (int i = 0; i < 4; i++) {
+					if (grounds[i].x < player.cornersPos.rightBottom.x &&
+						player.cornersPos.leftTop.x < grounds[i].y + kBlockWidth * kGroundBlocks &&
+						grounds[i].y < player.cornersPos.rightBottom.y &&
+						player.cornersPos.leftTop.y < grounds[i].y + kBlockHeight * 4) {
+						if (player.centerPos.y >= grounds[i].y) {
+							player.centerPos.x -= scrollSpeed;
+						}
 					}
 				}
 
@@ -347,13 +376,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					player.isJumping = true;
 				}
 
-				// プレイヤーが地面より下がったらスクロール開始
-				if (player.centerPos.y > currentGroundY) {
-					for (int i = 0; i < kNumGrounds; i++) {
-						grounds[i].x -= scrollSpeed;
-					}
-				}
-
 				// 画面左端に出たらゲームオーバー
 				if (player.centerPos.x + player.width / 2 < 0) isGameOver = true;
 
@@ -362,6 +384,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				// Rキーでリトライ
 				if (keys[DIK_R] && !preKeys[DIK_R]) {
 					isGameOver = false;
+					player.centerPos = { 225,625 };
 					player.cornersPos = {
 						{player.centerPos.x - player.width / 2,player.centerPos.y - player.height / 2},
 						{player.centerPos.x + player.width / 2,player.centerPos.y - player.height / 2},
@@ -371,6 +394,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					player.vecY = 0;
 					playTime = 0.0f;
 					scrollSpeed = 6.0f;
+					difficultyLevel = 1;
+					player.isJumping = false;
+					for (int i = 0; i < kNumGrounds; i++) {
+						grounds[i].x = i * kBlockWidth * (kGroundBlocks + kHoleBlocks[difficultyLevel]); // 穴2ブロック分を想定
+						if (i <= 3) {
+							grounds[i].y = player.centerPos.y + player.height / 2;
+						}
+						else {
+							float prevY = grounds[i - 1].y;
+							float newY;
+							do {
+								newY = kHeights[rand() % kNumHeights];
+							} while (fabs(newY - prevY) < 120.0f); // 近すぎ回避
+							grounds[i].y = newY;
+						}
+						grounds[i].blockCount = kGroundBlocks;
+						grounds[i].isGround = true;
+					}
 				}
 
 				// ESCキーでタイトルに戻る
@@ -389,6 +430,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		switch (currentScene) {
 
 		case TITLE:
+			for (int i = 0; i < kNumGrounds; i++) {
+				for (int j = 0; j < grounds[i].blockCount; j++) {
+					float tileX = grounds[i].x + j * kBlockWidth;
+					float tileY = grounds[i].y;
+
+					// 足場は上端 tileY から画面下まで描画
+					Novice::DrawQuad(
+						(int)tileX, (int)tileY,        // 左上
+						(int)(tileX + kBlockWidth), (int)tileY,   // 右上
+						(int)tileX, kWindowHeight,     // 左下
+						(int)(tileX + kBlockWidth), kWindowHeight, // 右下
+						0, 0, (int)kBlockWidth, (int)kBlockHeight,
+						groundTexHandle,
+						WHITE
+					);
+				}
+			}
 			// タイトル文字
 			Novice::ScreenPrintf(480, 120, "★ Title Screen ★");
 
