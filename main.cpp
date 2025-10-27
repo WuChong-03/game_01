@@ -21,7 +21,7 @@ constexpr float GROUND_Y = 720.0f - FLOOR_H;
 //======================
 constexpr float VOLUME_BGM = 0.45f;
 constexpr float VOLUME_UI_MOVE = 0.80f;
-constexpr float VOLUME_UI_START = 1.0f;
+constexpr float VOLUME_UI_START = 2.0f;
 constexpr float VOLUME_JUMP = 0.80f;
 constexpr float VOLUME_LAND = 0.60f;
 
