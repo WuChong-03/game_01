@@ -1,61 +1,163 @@
 #include <Novice.h>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include "bg.h"
 #include "button.h"
 #include "title.h"
 #include "Player.h"
 
-const char kWindowTitle[] = "Run Game (Seamless Title -> Play)";
+const char kWindowTitle[] = "Run Game (段段地面单文件版)";
 
 enum GameState { READY, PLAY };
 enum UIState { MENU, HOWTO };
 
 static inline float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
-constexpr int FLOOR_H = 260;
-constexpr float GROUND_Y = 720.0f - FLOOR_H;
+constexpr int SCREEN_W = 1280;
+constexpr int SCREEN_H = 720;
 
 //======================
-// ✅ 音量常量
+// 常量设置（保持不变）
 //======================
 constexpr float VOLUME_BGM = 0.45f;
-constexpr float VOLUME_UI_MOVE = 0.80f;
+constexpr float VOLUME_UI_MOVE = 0.8f;
 constexpr float VOLUME_UI_START = 2.0f;
-constexpr float VOLUME_JUMP = 0.80f;
-constexpr float VOLUME_LAND = 0.60f;
+constexpr float VOLUME_JUMP = 0.8f;
+constexpr float VOLUME_LAND = 0.6f;
 
-struct Obstacle {
-    Corners pos;
-    float w, h;
-    bool hitX, hitY;
+//======================
+// 段段地面参数（保持不变）
+//======================
+constexpr float kBlockWidth = 128.0f;
+constexpr float kBlockHeight = 128.0f;
+constexpr int   kBlocksPerSeg = 5;
+constexpr int   kNumSegments = 4;
+
+const float kHeights[] = { 400.0f, 500.0f, 600.0f, 700.0f };
+const int   kNumHeights = (int)(sizeof(kHeights) / sizeof(kHeights[0]));
+
+//======================
+// 段段地面：内联在本文件
+//======================
+struct Ground {
+    float x;
+    float y;
+    int   blockCount;
+    bool  isGround;
 };
 
-static inline Corners MakeCorners(float x, float y, float w, float h) {
-    return { {x,y},{x + w,y},{x,y + h},{x + w,y + h} };
+// 初始化地面
+static inline void InitGrounds(
+    Ground* grounds, int num, float /*startY*/,
+    float blockW, int blocksPerSeg,
+    const float* heights, int nHeights
+) {
+    for (int i = 0; i < num; i++) {
+        grounds[i].x = i * blockW * (blocksPerSeg + 2);
+        // 初始高度：循环使用高度表，简单稳定
+        grounds[i].y = heights[i % nHeights];
+        grounds[i].blockCount = blocksPerSeg;
+        grounds[i].isGround = true;
+    }
+}
+
+// 将一段地面移动到右端并随机高度（避免太接近）
+static inline void RecycleOneGround(
+    Ground& g, const Ground* grounds, int num,
+    float blockW, int blocksPerSeg,
+    const float* heights, int nHeights,
+    float minDY = 120.0f
+) {
+    float maxX = grounds[0].x;
+    for (int j = 1; j < num; j++) {
+        if (grounds[j].x > maxX) maxX = grounds[j].x;
+    }
+    g.x = maxX + blockW * (blocksPerSeg + 2);
+
+    float newY;
+    do {
+        newY = heights[std::rand() % nHeights];
+    } while (std::fabs(newY - g.y) < minDY);
+    g.y = newY;
+}
+
+// 更新地面（左移+循环）
+static inline void UpdateGrounds(
+    Ground* grounds, int num,
+    float scrollSpeed,
+    float blockW, int blocksPerSeg,
+    const float* heights, int nHeights
+) {
+    for (int i = 0; i < num; i++) {
+        grounds[i].x -= scrollSpeed;
+        if (grounds[i].x + blockW * blocksPerSeg < 0) {
+            RecycleOneGround(grounds[i], grounds, num, blockW, blocksPerSeg, heights, nHeights);
+        }
+    }
+}
+
+// 绘制：从每段顶 y 拉到底部
+static inline void DrawGrounds(
+    const Ground* grounds, int num,
+    int groundTex,
+    float blockW, float blockH,
+    int screenH
+) {
+    for (int i = 0; i < num; i++) {
+        for (int j = 0; j < grounds[i].blockCount; j++) {
+            float tileX = grounds[i].x + j * blockW;
+            float tileY = grounds[i].y;
+
+            Novice::DrawQuad(
+                (int)tileX, (int)tileY,                 // 左上
+                (int)(tileX + blockW), (int)tileY,      // 右上
+                (int)tileX, screenH,                    // 左下
+                (int)(tileX + blockW), screenH,         // 右下
+                0, 0, (int)blockW, (int)blockH,
+                groundTex, 0xFFFFFFFF
+            );
+        }
+    }
+}
+
+// 查询玩家脚下地面的 y 值（找不到则返回很大值→继续下落）
+static inline float QueryGroundYAtX(
+    const Ground* grounds, int num,
+    float px, float blockW
+) {
+    for (int i = 0; i < num; i++) {
+        float segL = grounds[i].x;
+        float segR = segL + grounds[i].blockCount * blockW;
+        if (px >= segL && px <= segR) {
+            return grounds[i].y;
+        }
+    }
+    return 2000.0f;
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    Novice::Initialize(kWindowTitle, 1280, 720);
+    Novice::Initialize(kWindowTitle, SCREEN_W, SCREEN_H);
     char keys[256]{}, preKeys[256]{};
+    std::srand(unsigned(std::time(nullptr)));
 
     //--------------------------------------
-    // 音频加载
+    // 音频（保持不变）
     //--------------------------------------
     int seBgm = Novice::LoadAudio("./Resources/sound/bgm_gameplay.wav");
-    int seJumpUp = Novice::LoadAudio("./Resources/sound/jump_start.wav");
+    int seJump = Novice::LoadAudio("./Resources/sound/jump_start.wav");
     int seLand = Novice::LoadAudio("./Resources/sound/jump_land.wav");
     int seUiMove = Novice::LoadAudio("./Resources/sound/ui_button.wav");
     int seUiStart = Novice::LoadAudio("./Resources/sound/ui_start.wav");
-    int playBgmHandle = -1;
 
+    int playBgmHandle = -1;
     auto PlayBGM = [&](int audio) {
         if (playBgmHandle != -1) Novice::StopAudio(playBgmHandle);
         playBgmHandle = Novice::PlayAudio(audio, true, VOLUME_BGM);
         };
 
     //--------------------------------------
-    // 纹理加载
+    // 纹理（保持不变）
     //--------------------------------------
     int texStart = Novice::LoadTexture("./Resources/button_start.png");
     int texHow = Novice::LoadTexture("./Resources/button_howToPlay.png");
@@ -65,15 +167,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     int bgFar = Novice::LoadTexture("./Resources/bg_far.png");
     int bgNear = Novice::LoadTexture("./Resources/bg_near.png");
-    int bgFloor = Novice::LoadTexture("./Resources/floor.png");
+    // ⚠️ 删除旧的 bgFloor（不再需要）
 
-    int white1x1 = Novice::LoadTexture("./NoviceResources/white1x1.png");
+    int groundTex = Novice::LoadTexture("./Resources/floor/floor.png");
 
     //--------------------------------------
-    // 背景 & UI 初始化
+    // 背景与UI初始化（保持不变，改为2纹理）
     //--------------------------------------
     Background bg;
-    InitBackground(bg, bgFar, bgNear, bgFloor);
+    InitBackground(bg, bgFar, bgNear);  // ✅ 改为 2 参数版本
 
     Title title;
     InitTitle(title, texTitle, 120.0f, 100.0f);
@@ -85,24 +187,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int selected = 1;
 
     //--------------------------------------
-    // 玩家
+    // 玩家（保持你工程内 Player 的逻辑与数值）
     //--------------------------------------
     Player player;
     player.Init();
-    player.Reset(225.0f, GROUND_Y - 25.0f);
+    player.Reset(225.0f, 600.0f);
 
     //--------------------------------------
-    // 障碍物初始化
+    // 段段地面初始化
     //--------------------------------------
-    Obstacle obs{ {}, 50.0f, 100.0f, false, false };
-    float obsX = 1000.0f;
-    float obsY = GROUND_Y - obs.h;
-    obs.pos = MakeCorners(obsX, obsY, obs.w, obs.h);
+    Ground grounds[kNumSegments];
+    InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
 
     //--------------------------------------
-    // 游戏变量
+    // 状态与控制变量（保持不变）
     //--------------------------------------
-    bool isGameOver = false;
+    bool  isGameOver = false;
     float scrollSpeed = 6.0f;
     const float maxScrollSpeed = 64.0f;
     const float baseAccel = 0.05f;
@@ -116,18 +216,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     const float FLY_T = 0.18f;
 
     GameState gameState = READY;
-    UIState uiState = MENU;
+    UIState   uiState = MENU;
 
     //--------------------------------------
     // 主循环
     //--------------------------------------
     while (Novice::ProcessMessage() == 0) {
         Novice::BeginFrame();
-        memcpy(preKeys, keys, 256);
+        std::memcpy(preKeys, keys, 256);
         Novice::GetHitKeyStateAll(keys);
 
         //--------------------------------------
-        // MENU：背景动，但游戏不更新
+        // 标题菜单状态
         //--------------------------------------
         if (gameState == READY && uiState == MENU) {
 
@@ -137,91 +237,66 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             if (keys[DIK_S] && !preKeys[DIK_S]) { selected = (selected + 1) % 3; Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE); }
 
             if (keys[DIK_RETURN] && !preKeys[DIK_RETURN]) {
-                Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE);
+                Novice::PlayAudio(seUiStart, false, VOLUME_UI_START);
 
                 if (selected == 0) {
-                    Novice::PlayAudio(seUiStart, false, VOLUME_UI_START);
                     gameState = PLAY;
                     isGameOver = false;
                     title.targetOffsetX = -800.0f;
-                    for (int i = 0;i < 3;i++) btn[i].targetOffsetX = +800.0f;
-                    PlayBGM(seBgm);
-
-                    player.Reset(225.0f, GROUND_Y - player.h / 2);
+                    for (int i = 0; i < 3; i++) btn[i].targetOffsetX = +800.0f;
+                    player.Reset(225.0f, 600.0f);
+                    InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
                     scrollSpeed = 6.0f;
-                    targetBgFactor = 1.0f;
                 }
-                else if (selected == 1) uiState = HOWTO;
-                else if (selected == 2) { Novice::Finalize(); return 0; }
+                else if (selected == 1) {
+                    uiState = HOWTO;
+                }
+                else if (selected == 2) {
+                    Novice::Finalize();
+                    return 0;
+                }
             }
         }
 
         //--------------------------------------
-        // PLAY 游戏进行中
+        // 游戏进行中（段段地面 & 落地逻辑）
         //--------------------------------------
         if (gameState == PLAY) {
-
-            bool pressJump = (!isGameOver && keys[DIK_SPACE] && !preKeys[DIK_SPACE]);
+            bool pressJump = (keys[DIK_SPACE] && !preKeys[DIK_SPACE]);
 
             if (!isGameOver) {
+                // 查询玩家脚下地面高度
+                float groundY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
 
-                // 玩家更新
                 if (pressJump && !player.isJumping)
-                    Novice::PlayAudio(seJumpUp, false, VOLUME_JUMP);
+                    Novice::PlayAudio(seJump, false, VOLUME_JUMP);
 
                 bool wasAir = player.isJumping;
-                player.Update(pressJump, gravity, jumpPower, GROUND_Y);
+                player.Update(pressJump, gravity, jumpPower, groundY);
                 if (wasAir && !player.isJumping)
                     Novice::PlayAudio(seLand, false, VOLUME_LAND);
 
-                // 滚动更新
+                // 地面左移加速（同事风格）
                 scrollSpeed += baseAccel;
-                if (scrollSpeed > maxScrollSpeed)scrollSpeed = maxScrollSpeed;
+                if (scrollSpeed > maxScrollSpeed) scrollSpeed = maxScrollSpeed;
 
-                obsX -= scrollSpeed;
-                if (obsX + obs.w < 0) obsX = float(1280 + rand() % 300);
-                obs.pos = MakeCorners(obsX, obsY, obs.w, obs.h);
-
-                // 碰撞判定
-                obs.hitX = (player.corners.rb.x >= obs.pos.lt.x &&
-                    player.corners.lt.x <= obs.pos.rb.x);
-                obs.hitY = (player.corners.lb.y >= obs.pos.lt.y &&
-                    player.corners.lt.y <= obs.pos.lb.y);
-
-                if (obs.hitX && obs.hitY) {
-                    Novice::StopAudio(playBgmHandle);
-                    playBgmHandle = -1;
-                    isGameOver = true;
-                }
+                UpdateGrounds(grounds, kNumSegments, scrollSpeed, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
             }
 
-            //--------------------------------------
-            // ✅死亡等待：仅允许按R重开
-            //--------------------------------------
-            if (isGameOver && keys[DIK_R] && !preKeys[DIK_R]) {
-                Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE);
-
+            // R 键回到菜单
+            if (keys[DIK_R] && !preKeys[DIK_R]) {
                 gameState = READY;
                 uiState = MENU;
-
                 title.targetOffsetX = 0;
-                for (int i = 0;i < 3;i++) btn[i].targetOffsetX = 0;
-
-                player.Reset(225.0f, GROUND_Y - player.h / 2);
+                for (int i = 0; i < 3; i++) btn[i].targetOffsetX = 0;
+                player.Reset(225.0f, 600.0f);
+                InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
                 scrollSpeed = 6.0f;
-                bgSpeedFactor = 1.0f;
-                targetBgFactor = 1.0f;
-
-                obsX = 1000.0f;
-                obs.pos = MakeCorners(obsX, obsY, obs.w, obs.h);
-
-                isGameOver = false;
-                PlayBGM(seBgm);
             }
         }
 
         //--------------------------------------
-        // ✅背景更新范围
+        // 背景更新
         //--------------------------------------
         if (!isGameOver) {
             bgSpeedFactor = Lerp(bgSpeedFactor, targetBgFactor, BG_LERP);
@@ -229,12 +304,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
 
         //--------------------------------------
-        // UI动画
+        // UI 动画
         //--------------------------------------
         UpdateTitle(title);
         title.offsetX = Lerp(title.offsetX, title.targetOffsetX, FLY_T);
-
-        for (int i = 0;i < 3;i++) {
+        for (int i = 0; i < 3; i++) {
             UpdateButton(btn[i], i == selected);
             btn[i].offsetX = Lerp(btn[i].offsetX, btn[i].targetOffsetX, FLY_T);
         }
@@ -247,7 +321,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (gameState == READY) {
             if (uiState == MENU) {
                 DrawTitle(title);
-                for (int i = 0;i < 3;i++)
+                for (int i = 0; i < 3; i++)
                     DrawButton(btn[i], (i == selected) ? 0xF2FC32FF : 0xFFFFFFFF);
             }
             else if (uiState == HOWTO) {
@@ -257,22 +331,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
 
         if (gameState == PLAY) {
+            DrawGrounds(grounds, kNumSegments, groundTex, kBlockWidth, kBlockHeight, SCREEN_H);
             player.Draw();
-
-            // 障碍绘制
-            Novice::DrawQuad(
-                int(obs.pos.lt.x), int(obs.pos.lt.y),
-                int(obs.pos.rt.x), int(obs.pos.rt.y),
-                int(obs.pos.lb.x), int(obs.pos.lb.y),
-                int(obs.pos.rb.x), int(obs.pos.rb.y),
-                0, 0, int(obs.w), int(obs.h),
-                white1x1, 0x000000FF
-            );
-
-            if (isGameOver) {
-                Novice::ScreenPrintf(540, 300, "GAME OVER!");
-                Novice::ScreenPrintf(480, 340, "Press [R]");
-            }
         }
 
         Novice::EndFrame();
