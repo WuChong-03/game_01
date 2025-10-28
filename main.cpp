@@ -6,6 +6,7 @@
 #include "button.h"
 #include "title.h"
 #include "Player.h"
+#include <algorithm>
 
 const char kWindowTitle[] = "Run Game (段段地面单文件版)";
 
@@ -101,10 +102,11 @@ static inline void UpdateGrounds(
 //------------------------------------------------------
 // 完整AABB碰撞：先左右、再上下（无未使用变量）
 //------------------------------------------------------
-static void ResolvePlayerCollision(Player& player, const Ground* grounds, int num,
-    float blockW, float blockH)
-{
-    // --- 水平方向：把人从墙里“挤出来” ---
+static void ResolvePlayerCollision(
+    Player& player, const Ground* grounds, int num,
+    float blockW, float blockH
+) {
+    // 玩家AABB
     float px = player.center.x - player.w / 2.0f;
     float py = player.center.y - player.h / 2.0f;
     float pw = player.w;
@@ -112,64 +114,68 @@ static void ResolvePlayerCollision(Player& player, const Ground* grounds, int nu
 
     for (int i = 0; i < num; i++) {
         for (int j = 0; j < grounds[i].blockCount; j++) {
-            float gx = grounds[i].x + j * blockW;
-            float gy = grounds[i].y;
 
+            // 这一列地面的X
+            float gx = grounds[i].x + j * blockW;
+
+            // 这一列地面的“可见顶部”
+            float tileTop = grounds[i].y - blockH;
+
+            // 我们希望碰撞盒一直到屏幕底部
+            float tileBottom = (float)SCREEN_H;
+
+            // 也就是说，这个地块的碰撞矩形是：
+            // x: gx ~ gx+blockW
+            // y: tileTop ~ SCREEN_H
             bool overlapX = (px + pw > gx) && (px < gx + blockW);
-            bool overlapY = (py + ph > gy) && (py < gy + blockH);
+            bool overlapY = (py + ph > tileTop) && (py < tileBottom);
+
             if (overlapX && overlapY) {
-                // 计算左右重叠量，往较小的一侧“推”出去
-                float pushLeft = (gx + blockW) - px;   // 往右推
-                float pushRight = (px + pw) - gx;       // 往左推
-                if (pushLeft < pushRight) {
-                    player.center.x += pushLeft - 0.1f;
+
+                // 计算重叠量（跟你现在的一样的思路）
+                float overlapLeft = (px + pw) - gx;
+                float overlapRight = (gx + blockW) - px;
+                float overlapTop = (py + ph) - tileTop;
+                float overlapBottom = (tileBottom)-py;
+
+                // 选最小的那个方向
+                float m = overlapLeft;
+                int dir = 0; // 0=left,1=right,2=top,3=bottom
+
+                if (overlapRight < m) { m = overlapRight;  dir = 1; }
+                if (overlapTop < m) { m = overlapTop;    dir = 2; }
+                if (overlapBottom < m) { m = overlapBottom; dir = 3; }
+
+                if (dir == 0) {
+                    // 从左边撞进去了 → 往左推回
+                    player.center.x -= overlapLeft;
+                }
+                else if (dir == 1) {
+                    // 从右边撞进去了 → 往右推回
+                    player.center.x += overlapRight;
+                }
+                else if (dir == 2) {
+                    // 玩家脚踩到平台顶 / 或者压到它上面
+                    player.center.y -= overlapTop;
+                    player.vy = 0;
+                    player.isJumping = false;
                 }
                 else {
-                    player.center.x -= pushRight - 0.1f;
+                    // 撞到下面（比如头撞到砖块）
+                    player.center.y += overlapBottom;
+                    // 这里我们没有清 vy，保持角色被顶回去的感觉
                 }
-                // 更新包围盒
+
+                // 更新px/py，方便继续后面的块也能算
                 px = player.center.x - player.w / 2.0f;
                 py = player.center.y - player.h / 2.0f;
             }
         }
     }
-
-    // --- 垂直方向：只在“下落 + 脚触到顶部附近”时落地 ---
-    float nearestY = 2000.0f;
-    bool onGround = false;
-
-    // 再次获取包围盒（可能被水平修正过）
-    px = player.center.x - player.w / 2.0f;
-    py = player.center.y - player.h / 2.0f;
-
-    for (int i = 0; i < num; i++) {
-        for (int j = 0; j < grounds[i].blockCount; j++) {
-            float gx = grounds[i].x + j * blockW;
-            float gy = grounds[i].y;
-
-            bool overlapX = (px + pw > gx) && (px < gx + blockW);
-            bool overlapY = (py + ph > gy) && (py < gy + blockH);
-            if (overlapX && overlapY) {
-                if (player.vy >= 0.0f &&           // 只在下落
-                    py + ph > gy &&                // 脚已进入方块上缘
-                    py + ph < gy + blockH * 0.5f) // 且在上半区，避免从下顶住也被吸附
-                {
-                    onGround = true;
-                    if (gy < nearestY) nearestY = gy;
-                }
-            }
-        }
-    }
-
-    if (onGround) {
-        player.center.y = nearestY - player.h / 2.0f;
-        player.vy = 0.0f;
-        if (player.isJumping) { // 动画/状态复位
-            player.isJumping = false;
-            player.animFrame = 0;
-        }
-    }
 }
+
+
+
 
 
 
@@ -183,7 +189,7 @@ static inline void DrawGrounds(
     for (int i = 0; i < num; i++) {
         for (int j = 0; j < grounds[i].blockCount; j++) {
             float tileX = grounds[i].x + j * blockW;
-            float tileY = grounds[i].y;
+            float tileY = grounds[i].y - blockH;
             Novice::DrawQuad(
                 (int)tileX, (int)tileY,
                 (int)(tileX + blockW), (int)tileY,
@@ -259,7 +265,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     // ✅ 出生时自动贴地
     player.Reset(225.0f, 600.0f);
     float spawnGroundY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
-    player.center.y = spawnGroundY - player.h * 0.5f;
+    float tileTop = spawnGroundY - kBlockHeight;
+    player.center.y = tileTop - player.h * 0.5f;
+
 
     bool  isGameOver = false;
     float scrollSpeed = 6.0f;
@@ -295,7 +303,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     player.Reset(225.0f, 600.0f);
                     InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
                     float gY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
-                    player.center.y = gY - player.h * 0.5f; // ✅ 再次贴地
+                    player.center.y = (gY - kBlockHeight) - player.h * 0.5f;
                     scrollSpeed = 6.0f;
                 }
                 else if (selected == 1) uiState = HOWTO;
@@ -312,7 +320,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 player.Update(pressJump, gravity, jumpPower, 2000.0f);  // ← 关键！:contentReference[oaicite:3]{index=3}
                 // 由我们这边负责：左右墙 & 脚底落地
                 ResolvePlayerCollision(player, grounds, kNumSegments, kBlockWidth, kBlockHeight);
-                player.center.x = 225.0f;
                 // ✅ 检查是否掉出屏幕底部
                 if (player.center.y - player.h / 2.0f > SCREEN_H + 200.0f) {
                     isGameOver = true;  // 掉落判定
@@ -331,9 +338,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 player.Reset(225.0f, 600.0f);
                 InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
                 float gY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
-                player.center.y = gY - player.h * 0.5f; // ✅ 重开时贴地
+                player.center.y = (gY - kBlockHeight) - player.h * 0.5f;
                 scrollSpeed = 6.0f;
             }
+
         }
 
         if (!isGameOver) {
