@@ -10,83 +10,71 @@
 #include "button.h"
 #include "title.h"
 #include "Player.h"
+#include "Score.h" // 分数系统
 
 //======================
 // 基本设定
 //======================
-const char kWindowTitle[] = "5106_ゴ_ヤマジ_ヤマモト";
+const char kWindowTitle[] = "5106_フレームラッシュ";
 
 constexpr int SCREEN_W = 1280;
 constexpr int SCREEN_H = 720;
 
+//======================
 // 音量
+//======================
 constexpr float VOLUME_BGM = 0.45f;
 constexpr float VOLUME_UI_MOVE = 0.8f;
 constexpr float VOLUME_UI_START = 2.0f;
-constexpr float VOLUME_JUMP = 1.8f;
-constexpr float VOLUME_LAND = 1.6f;
+constexpr float VOLUME_JUMP = 2.5f;
+constexpr float VOLUME_LAND = 2.5f;
 
-//----------------------
+//======================
 // 平台（地面段）参数
-//----------------------
+//======================
 constexpr float kBlockWidth = 128.0f;
 constexpr float kBlockHeight = 128.0f;
 constexpr int   kNumSegments = 4;
 
-// 平台每“段”的随机宽度
-constexpr int MIN_BLOCKS_PER_SEG = 6;  
-constexpr int MAX_BLOCKS_PER_SEG = 10;  
+// 每一段平台由多少块128px的方块组成（随机范围）
+constexpr int MIN_BLOCKS_PER_SEG = 6;
+constexpr int MAX_BLOCKS_PER_SEG = 10;
 
-// 段与段之间的最小空隙：用块数（2块=256px）
+// 段与段之间的水平间隔（留坑）
 constexpr int GAP_BLOCKS = 2;
 
-// 平台的允许高度范围（屏幕向下是+）
-// 注意：Y小 = 更高、更难跳；Y大 = 更低、更安全
-constexpr float GROUND_Y_MIN = 380.0f; // 最高允许平台
-constexpr float GROUND_Y_MAX = 640.0f; // 最低允许平台
+// 平台允许出现的高度范围（y 越大越靠下）
+constexpr float GROUND_Y_MIN = 380.0f;
+constexpr float GROUND_Y_MAX = 640.0f;
 
-// 相邻平台之间的最大高度差（像素）
-// 让高度不会突然差太多，跳起来更舒服
+// 相邻两段平台的最大高度差（像素）
 constexpr float MAX_HEIGHT_STEP = 200.0f;
 
 //======================
-// 难度阶段系统（7阶段）
+// 难度阶段（7个阶段）
 //======================
-//
-// 阶段1:   0    ~  3000 px
-// 阶段2:   3000 ~  6000 px
-// 阶段3:   6000 ~ 10000 px
-// 阶段4:   10000~ 20000 px
-// 阶段5:   20000~ 30000 px
-// 阶段6:   30000~ 40000 px
-// 阶段7:   40000+
-//
-// distanceRun = 累计水平滚动距离
-//======================
-
-// 每个阶段结束线（决定阶段切换）
+// 跑的距离到达这些值就往下一个阶段走
 constexpr float STAGE_DISTANCE_ENDS[6] = {
-    3000.0f,   // 阶段1结束
-    6000.0f,   // 阶段2结束
-    10000.0f,  // 阶段3结束
-    20000.0f,  // 阶段4结束
-    30000.0f,  // 阶段5结束
-    40000.0f   // 阶段6结束
-    // 超过就是阶段7
+    3000.0f,
+    6000.0f,
+    10000.0f,
+    20000.0f,
+    30000.0f,
+    40000.0f
 };
 
-// 每阶段（索引0~6 -> 阶段1~7）具体速度表
-// 地板/平台卷动速度（主游戏推进）
+// 每个阶段的地面卷动速度
 constexpr float GROUND_STAGE_SPEED[7] = {
-    10.0f,   // stage1
-    13.0f,   // stage2
-    15.0f,  // stage3
-    17.0f,  // stage4
-    19.0f,  // stage5
-    21.0f,  // stage6
-    23.0f   // stage7
+    10.0f,
+    13.0f,
+    15.0f,
+    17.0f,
+    19.0f,
+    21.0f,
+    23.0f
 };
-// 远景背景速度
+
+// 背景远景层速度（远景=慢）
 constexpr float FAR_STAGE_SPEED[7] = {
     5.0f,
     7.0f,
@@ -96,32 +84,34 @@ constexpr float FAR_STAGE_SPEED[7] = {
     15.0f,
     17.0f
 };
-// 近景背景速度
+
+// 背景近景层速度（近景=快）
 constexpr float NEAR_STAGE_SPEED[7] = {
-    10.0f,   // stage1
-    13.0f,   // stage2
-    15.0f,  // stage3
-    17.0f,  // stage4
-    19.0f,  // stage5
-    21.0f,  // stage6
-    23.0f   // stage7
+    10.0f,
+    13.0f,
+    15.0f,
+    17.0f,
+    19.0f,
+    21.0f,
+    23.0f
 };
 
-// 玩家动画三档（慢/中/快），用“每帧持续时间(秒/帧)”表示，越小越快
-constexpr float RUN_TIER_SPF[3] = { 0.08f, 0.05f, 0.035f }; // 跑步动画
-constexpr float JUMP_TIER_SPF[3] = { 0.18f, 0.14f, 0.10f };  // 跳跃动画
+// 玩家动画速度（跑步/跳跃）3档
+constexpr float RUN_TIER_SPF[3] = { 0.08f, 0.05f, 0.035f };
+constexpr float JUMP_TIER_SPF[3] = { 0.18f, 0.14f, 0.10f };
 
-// 根据累计距离 -> 阶段(0~6)
+//======================
+// 小工具函数
+//======================
 static inline int GetStageIndex(float distanceRun) {
     for (int i = 0; i < 6; i++) {
         if (distanceRun < STAGE_DISTANCE_ENDS[i]) {
             return i;
         }
     }
-    return 6; // 阶段7
+    return 6;
 }
 
-// Lerp 小工具
 static inline float Lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
@@ -133,29 +123,28 @@ enum GameState { READY, PLAY };
 enum UIState { MENU, HOWTO };
 
 //======================
-// 地面段结构
+// 地面段
 //======================
 struct Ground {
-    float x;          // 这段平台的起始X
-    float y;          // 这段平台顶面（越大越靠下）
-    int   blockCount; // 这段平台的宽度(多少块×128像素)
+    float x;          // 这段平台起始X
+    float y;          // 这段平台的顶面y（越大越靠下）
+    int   blockCount; // 这段平台由多少块128px拼成
     bool  isGround;
 };
 
 //======================
-// 随机/Clamp 工具
+// 工具：随机/Clamp
 //======================
 static inline float RandRangeF(float minVal, float maxVal) {
-    float t = (float)std::rand() / (float)RAND_MAX; // 0~1
+    float t = (float)std::rand() / (float)RAND_MAX;
     return minVal + (maxVal - minVal) * t;
 }
 static inline float ClampF(float v, float lo, float hi) {
     return (v < lo) ? lo : (v > hi) ? hi : v;
 }
 
-// 找到目前最右边平台的“末端X”，然后计算新平台起点X
+// 计算“下一段平台”的起始x
 static inline float ComputeNextSegmentX(const Ground* grounds, int numExisting) {
-    // numExisting: 我们只看 [0, numExisting] 之前已经正确放置的段
     float rightMostEnd = grounds[0].x + grounds[0].blockCount * kBlockWidth;
     for (int i = 1; i < numExisting; i++) {
         float endX = grounds[i].x + grounds[i].blockCount * kBlockWidth;
@@ -163,32 +152,30 @@ static inline float ComputeNextSegmentX(const Ground* grounds, int numExisting) 
             rightMostEnd = endX;
         }
     }
-    // 新段起点 = 最右末端 + 间隔
+    // 新段从最右段的末尾再加 GAP_BLOCKS 的空隙
     return rightMostEnd + GAP_BLOCKS * kBlockWidth;
 }
 
 //======================
-// 初始化地面组（开局）
+// 初始化一组平台（开局）
 //======================
 static inline void InitGrounds(Ground* grounds, int num) {
 
-    // 第一段：手动给一个起点
+    // 第一段
     int firstBlocks = MIN_BLOCKS_PER_SEG +
         (std::rand() % (MAX_BLOCKS_PER_SEG - MIN_BLOCKS_PER_SEG + 1));
 
     grounds[0].blockCount = firstBlocks;
-    grounds[0].x = 200.0f; // 你可以改成0.0f之类，看你感觉
+    grounds[0].x = 200.0f; // 起始段稍微靠右一点，给角色出生空间
     grounds[0].y = RandRangeF(GROUND_Y_MIN, GROUND_Y_MAX);
     grounds[0].isGround = true;
 
-    // 后面段依次往右接
+    // 后续段
     for (int i = 1; i < num; i++) {
 
-        // 随机这个段的宽度
         int blocks = MIN_BLOCKS_PER_SEG +
             (std::rand() % (MAX_BLOCKS_PER_SEG - MIN_BLOCKS_PER_SEG + 1));
 
-        // 高度 = 上一段附近的高度 ± MAX_HEIGHT_STEP
         float prevY = grounds[i - 1].y;
         float minY = ClampF(prevY - MAX_HEIGHT_STEP, GROUND_Y_MIN, GROUND_Y_MAX);
         float maxY = ClampF(prevY + MAX_HEIGHT_STEP, GROUND_Y_MIN, GROUND_Y_MAX);
@@ -198,23 +185,21 @@ static inline void InitGrounds(Ground* grounds, int num) {
         grounds[i].y = newY;
         grounds[i].isGround = true;
 
-        // 用前面已经放好的段算最右端，再把当前段放过去
         grounds[i].x = ComputeNextSegmentX(grounds, i);
     }
 }
 
 //======================
-// 把飞出屏幕左侧的段丢到最右边，并随机新宽度/高度
+// 回收飞出左边的段 → 丢到最右边重新当新段
 //======================
 static inline void RecycleOneGround(
     Ground& g,
     const Ground* grounds,
     int num
 ) {
-    // 找最右端的末尾，以及参考它的高度
+    // 找目前最右端
     float rightMostEnd = grounds[0].x + grounds[0].blockCount * kBlockWidth;
     float refY = grounds[0].y;
-
     for (int i = 1; i < num; i++) {
         float endX = grounds[i].x + grounds[i].blockCount * kBlockWidth;
         if (endX > rightMostEnd) {
@@ -223,16 +208,15 @@ static inline void RecycleOneGround(
         }
     }
 
-    // 新宽度
+    // 新段的宽度
     int blocks = MIN_BLOCKS_PER_SEG +
         (std::rand() % (MAX_BLOCKS_PER_SEG - MIN_BLOCKS_PER_SEG + 1));
 
-    // 新高度：参照最右段的y，限制最大高度差
+    // 新段的高度，别跳变太离谱
     float minY = ClampF(refY - MAX_HEIGHT_STEP, GROUND_Y_MIN, GROUND_Y_MAX);
     float maxY = ClampF(refY + MAX_HEIGHT_STEP, GROUND_Y_MIN, GROUND_Y_MAX);
     float newY = RandRangeF(minY, maxY);
 
-    // 新X：接在最右之后 + 间隔
     float newX = rightMostEnd + GAP_BLOCKS * kBlockWidth;
 
     g.blockCount = blocks;
@@ -242,7 +226,7 @@ static inline void RecycleOneGround(
 }
 
 //======================
-// 每帧更新地面（左移并回收）
+// 每帧让平台往左滚 & 回收出界的
 //======================
 static inline void UpdateGrounds(
     Ground* grounds,
@@ -250,10 +234,9 @@ static inline void UpdateGrounds(
     float scrollSpeed
 ) {
     for (int i = 0; i < num; i++) {
-        // 左移
         grounds[i].x -= scrollSpeed;
 
-        // 如果整段都离开屏幕左侧，就回收
+        // 这一段完全飞出屏幕后，扔到最右边
         if (grounds[i].x + kBlockWidth * grounds[i].blockCount < 0.0f) {
             RecycleOneGround(grounds[i], grounds, num);
         }
@@ -261,7 +244,7 @@ static inline void UpdateGrounds(
 }
 
 //======================
-// 绘制地面段
+// 画平台
 //======================
 static inline void DrawGrounds(
     const Ground* grounds, int num,
@@ -274,10 +257,9 @@ static inline void DrawGrounds(
         for (int j = 0; j < grounds[i].blockCount; j++) {
 
             float topX = grounds[i].x + j * blockW;
-            float topY = grounds[i].y - blockH; // 平台顶面（角色踩的那层方块的上边缘）
+            float topY = grounds[i].y - blockH;
 
-            // --- 1. 画平台最上层（floor_top.png） ---
-            // 这块就是一个 128x128 的贴图，放在平台表面
+            // 顶面一层（floor_top.png）——像草皮/路面
             Novice::DrawQuad(
                 (int)topX, (int)topY,
                 (int)(topX + blockW), (int)topY,
@@ -289,8 +271,7 @@ static inline void DrawGrounds(
                 0xFFFFFFFF
             );
 
-            // --- 2. 画平台下面的柱身（floor.png） ---
-            // 这一段从 topY+blockH 一直到屏幕底，这里我们继续像以前一样拉伸到底
+            // 柱身往下垂（floor.png）——像土块
             float bodyTopY = topY + blockH;
             if (bodyTopY < screenH) {
                 Novice::DrawQuad(
@@ -308,9 +289,9 @@ static inline void DrawGrounds(
     }
 }
 
-
 //======================
-// 根据玩家X找到脚下平台的y（找不到就返回大值=掉下去）
+// 给定玩家X，找到他脚下那一段平台的Y
+// 找不到就返回2000（超大值=表示“没有地面”）
 //======================
 static inline float QueryGroundYAtX(
     const Ground* grounds, int num,
@@ -327,12 +308,13 @@ static inline float QueryGroundYAtX(
 }
 
 //======================
-// 玩家 vs 平台 碰撞修正（AABB对AABB，四方向推开）
+// 玩家 vs 平台 的AABB碰撞修正
 //======================
 static void ResolvePlayerCollision(
     Player& player, const Ground* grounds, int num,
     float blockW, float blockH
 ) {
+    // 先拿玩家当前矩形
     float px = player.center.x - player.w / 2.0f;
     float py = player.center.y - player.h / 2.0f;
     float pw = player.w;
@@ -343,8 +325,9 @@ static void ResolvePlayerCollision(
 
             float gx = grounds[i].x + j * blockW;
             float tileTop = grounds[i].y - blockH;
-            float tileBottom = (float)SCREEN_H;
+            float tileBottom = (float)SCREEN_H; // 地面柱身一直垂到屏幕底部
 
+            // 轴对齐矩形重叠判定
             bool overlapX = (px + pw > gx) && (px < gx + blockW);
             bool overlapY = (py + ph > tileTop) && (py < tileBottom);
 
@@ -354,32 +337,34 @@ static void ResolvePlayerCollision(
                 float overlapTop = (py + ph) - tileTop;
                 float overlapBottom = (tileBottom)-py;
 
-                // 找最小重叠方向
                 float m = overlapLeft;
-                int   dir = 0; // 0=left,1=right,2=top(脚踩),3=bottom(头撞)
+                int   dir = 0; // 0=left,1=right,2=top(脚踩到),3=bottom(头撞上)
 
                 if (overlapRight < m) { m = overlapRight;  dir = 1; }
                 if (overlapTop < m) { m = overlapTop;    dir = 2; }
                 if (overlapBottom < m) { m = overlapBottom; dir = 3; }
 
                 if (dir == 0) {
+                    // 撞到平台块的右边 → 往左推回玩家
                     player.center.x -= overlapLeft;
                 }
                 else if (dir == 1) {
+                    // 撞到平台块的左边 → 往右推回玩家
                     player.center.x += overlapRight;
                 }
                 else if (dir == 2) {
-                    // 从上踩到平台
+                    // 从上方踩到平台
                     player.center.y -= overlapTop;
                     player.vy = 0.0f;
                     player.isJumping = false;
                 }
-                else { // 头撞
+                else { // dir == 3
+                    // 玩家头撞到平台底部
                     player.center.y += overlapBottom;
-                    // vy 不清零，保持“被弹回”
+                    // vy保持向下(被弹回)，不强制归零
                 }
 
-                // 更新AABB给后面block继续用
+                // 修正后更新px/py，防止一帧多块重叠时偏移错误
                 px = player.center.x - player.w / 2.0f;
                 py = player.center.y - player.h / 2.0f;
             }
@@ -388,11 +373,10 @@ static void ResolvePlayerCollision(
 }
 
 //======================
-// 把玩家出生/重开时摆到平台上
+// 出生/重开时把玩家安放到当前平台的顶面
 //======================
 static inline void PlacePlayerOnGround(Player& player, Ground* grounds) {
-
-    // 基础位置（跟你以前保持类似）
+    // 玩家Reset，给个大致起点
     player.Reset(225.0f, 600.0f);
 
     float groundY = QueryGroundYAtX(
@@ -402,31 +386,15 @@ static inline void PlacePlayerOnGround(Player& player, Ground* grounds) {
     );
     float tileTop = groundY - kBlockHeight;
 
-    // 让玩家脚正好踩在平台面上
+    // 把玩家脚正好贴在平台面上
     player.center.y = tileTop - player.h * 0.5f;
-}
-
-//======================
-// HUD (调试信息左上角)
-//======================
-static inline void DrawHUD(
-    int x, int y,
-    float distanceRun,
-    int stageIdx,
-    float groundSpeed,
-    float nearSpd,
-    float farSpd
-) {
-    Novice::ScreenPrintf(x, y + 0, "Stage     : %d / 7", stageIdx + 1);
-    Novice::ScreenPrintf(x, y + 16, "Distance  : %.0f px", distanceRun);
-    Novice::ScreenPrintf(x, y + 32, "Ground Spd: %.1f px/f", groundSpeed);
-    Novice::ScreenPrintf(x, y + 48, "Near  Spd : %.1f px/f", nearSpd);
-    Novice::ScreenPrintf(x, y + 64, "Far   Spd : %.1f px/f", farSpd);
 }
 
 //======================
 // 回到菜单 / 开始游戏
 //======================
+// 注意：我们现在把 ScoreManager& score 也传进来，
+// 这样重开/回菜单的时候也能把分数清0。
 static void ResetToMenu(
     GameState& gameState,
     UIState& uiState,
@@ -435,27 +403,47 @@ static void ResetToMenu(
     Player& player,
     Ground grounds[kNumSegments],
     float& scrollSpeed,
-    float& distanceRun
+    float& distanceRun,
+    bool& isGameOver,
+    // ▼ 分数UI位置 (飞过去又飞回来)
+    float& scoreDrawX,
+    float& scoreDrawY,
+    float& scoreTargetX,
+    float& scoreTargetY,
+    // ▼ 分数管理器（要清零）
+    ScoreManager& score
 ) {
     gameState = READY;
     uiState = MENU;
     distanceRun = 0.0f;
 
-    // 回阶段1速度
+    // 回阶段1的速度
     scrollSpeed = GROUND_STAGE_SPEED[0];
 
-    // UI飞回来
+    // 不算GameOver了（回标题就相当于准备下一局）
+    isGameOver = false;
+
+    // 菜单UI飞回来
     title.targetOffsetX = 0.0f;
     for (int i = 0; i < 3; i++) {
         btn[i].targetOffsetX = 0.0f;
     }
 
-    // 重新生成地面
+    // 重新生成地面、放玩家
     InitGrounds(grounds, kNumSegments);
     PlacePlayerOnGround(player, grounds);
 
-    // 玩家动画速度也回到最慢档
+    // 玩家动画速度恢复到最慢档（阶段1的感觉）
     player.SetAnimSpeeds(RUN_TIER_SPF[0], JUMP_TIER_SPF[0]);
+
+    // 分数UI回右上角
+    scoreDrawX = 1000.0f;
+    scoreDrawY = 20.0f;
+    scoreTargetX = 1000.0f;
+    scoreTargetY = 20.0f;
+
+    // !!! 分数清零 !!!
+    score.Init();
 }
 
 static void StartGameplay(
@@ -466,25 +454,41 @@ static void StartGameplay(
     Player& player,
     Ground grounds[kNumSegments],
     float& scrollSpeed,
-    float& distanceRun
+    float& distanceRun,
+    // ▼ 分数UI位置
+    float& scoreDrawX,
+    float& scoreDrawY,
+    float& scoreTargetX,
+    float& scoreTargetY,
+    // ▼ 分数管理器
+    ScoreManager& score
 ) {
     gameState = PLAY;
     isGameOver = false;
     distanceRun = 0.0f;
     scrollSpeed = GROUND_STAGE_SPEED[0];
 
-    // UI飞走（标题飞左，按钮飞右）
+    // 标题飞左，按钮飞右（开场演出）
     title.targetOffsetX = -800.0f;
     for (int i = 0; i < 3; i++) {
         btn[i].targetOffsetX = +800.0f;
     }
 
-    // 地面重置/摆玩家到平台上
+    // 地面重置 / 玩家站好
     InitGrounds(grounds, kNumSegments);
     PlacePlayerOnGround(player, grounds);
 
     // 玩家动画速度回到最慢档
     player.SetAnimSpeeds(RUN_TIER_SPF[0], JUMP_TIER_SPF[0]);
+
+    // 分数UI开局也放回右上角
+    scoreDrawX = 1000.0f;
+    scoreDrawY = 20.0f;
+    scoreTargetX = 1000.0f;
+    scoreTargetY = 20.0f;
+
+    // !!! 新开一局 → 分数也必须归零 !!!
+    score.Init();
 }
 
 //======================
@@ -498,7 +502,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     char keys[256]{};
     char preKeys[256]{};
 
+    //----------------------
     // 声音资源
+    //----------------------
     int seBgm = Novice::LoadAudio("./Resources/sound/bgm_gameplay.wav");
     int seJump = Novice::LoadAudio("./Resources/sound/jump_start.wav");
     int seLand = Novice::LoadAudio("./Resources/sound/jump_land.wav");
@@ -511,7 +517,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         playBgmHandle = Novice::PlayAudio(audio, true, VOLUME_BGM);
         };
 
+    //----------------------
     // 贴图资源
+    //----------------------
     int texStart = Novice::LoadTexture("./Resources/button_start.png");
     int texHow = Novice::LoadTexture("./Resources/button_howToPlay.png");
     int texExit = Novice::LoadTexture("./Resources/button_exit.png");
@@ -523,7 +531,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int groundTex = Novice::LoadTexture("./Resources/floor/floor.png");
     int groundTopTex = Novice::LoadTexture("./Resources/floor/floor_top.png");
 
-    // 场景对象
+    // 提示“按R重开”的图
+    int texPressR = Novice::LoadTexture("./Resources/pressR.png");
+
+    //----------------------
+    // 场景对象初始化
+    //----------------------
     Background bg;
     InitBackground(bg, bgFarTex, bgNearTex);
 
@@ -534,7 +547,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     InitButton(btn[0], texStart, 850.0f, 400.0f); // Start
     InitButton(btn[1], texHow, 850.0f, 450.0f); // HowTo
     InitButton(btn[2], texExit, 850.0f, 500.0f); // Exit
-    int selected = 1; // 默认选中中间
+    int selected = 1; // 默认选中中间项
 
     Player player;
     player.Init();
@@ -543,26 +556,44 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     InitGrounds(grounds, kNumSegments);
     PlacePlayerOnGround(player, grounds);
 
+    // 分数管理器（0~9的位图数字）
+    ScoreManager score;
+    score.Init();
+
+    //----------------------
+    // 分数UI的Lerp位置
+    //----------------------
+    // 分数字当前绘制位置
+    float scoreDrawX = 1000.0f;
+    float scoreDrawY = 20.0f;
+    // 分数字目标位置
+    float scoreTargetX = 1000.0f;
+    float scoreTargetY = 20.0f;
+    // Lerp速率
+    const float SCORE_LERP_T = 0.15f;
+
+    //----------------------
     // 运行时变量
+    //----------------------
     bool  isGameOver = false;
 
-    float scrollSpeed = GROUND_STAGE_SPEED[0]; // 由阶段表决定
-    float distanceRun = 0.0f;                  // 跑了多远
+    float scrollSpeed = GROUND_STAGE_SPEED[0];
+    float distanceRun = 0.0f; // 以像素当米来算分
 
     const float gravity = 1.1f;
     const float jumpPower = -25.0f;
 
-    // 背景滚动平滑用
-    float bgSpeedFactor = 1.0f;  // 当前滚动系数
-    float targetBgFactor = 1.0f;  // 目标滚动系数
-    const float FLY_T = 0.18f; // UI 飞入飞出Lerp
+    // 背景滚动的平滑系数
+    float bgSpeedFactor = 1.0f;
+    float targetBgFactor = 1.0f;
+    const float FLY_T = 0.18f; // UI飞动的Lerp速率
 
     GameState gameState = READY;
     UIState   uiState = MENU;
 
-    //======================
-    // 主循环
-    //======================
+    //----------------------
+    // 游戏主循环
+    //----------------------
     while (Novice::ProcessMessage() == 0) {
         Novice::BeginFrame();
 
@@ -570,9 +601,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         std::memcpy(preKeys, keys, 256);
         Novice::GetHitKeyStateAll(keys);
 
-        //-------------------------
+        //======================
         // READY & MENU
-        //-------------------------
+        //======================
         if (gameState == READY && uiState == MENU) {
 
             // 确保BGM在播
@@ -580,7 +611,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 PlayBGM(seBgm);
             }
 
-            // 上下移动菜单
+            // W / S 选择菜单
             if (keys[DIK_W] && !preKeys[DIK_W]) {
                 selected = (selected + 2) % 3;
                 Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE);
@@ -590,7 +621,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE);
             }
 
-            // 回车确认
+            // 回车确定
             if (keys[DIK_RETURN] && !preKeys[DIK_RETURN]) {
                 Novice::PlayAudio(seUiStart, false, VOLUME_UI_START);
 
@@ -604,11 +635,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         player,
                         grounds,
                         scrollSpeed,
-                        distanceRun
+                        distanceRun,
+                        // 分数UI位置
+                        scoreDrawX, scoreDrawY,
+                        scoreTargetX, scoreTargetY,
+                        // 分数管理器
+                        score
                     );
                 }
                 else if (selected == 1) {
-                    // How to play
+                    // How to play 页面
                     uiState = HOWTO;
                 }
                 else if (selected == 2) {
@@ -619,36 +655,32 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
         }
 
-        //-------------------------
+        //======================
         // READY & HOWTO
-        //-------------------------
+        //======================
         if (gameState == READY && uiState == HOWTO) {
             if (keys[DIK_ESCAPE] && !preKeys[DIK_ESCAPE]) {
                 uiState = MENU;
             }
         }
 
-        //-------------------------
+        //======================
         // PLAY
-        //-------------------------
+        //======================
         if (gameState == PLAY) {
 
             bool pressJump = (keys[DIK_SPACE] && !preKeys[DIK_SPACE]);
 
             if (!isGameOver) {
-
-                // 1) 根据距离决定阶段
+                // 根据距离决定当前阶段
                 int stageIdx = GetStageIndex(distanceRun);
 
-                // 各层卷动速度
+                // 根据阶段更新游戏速度
                 scrollSpeed = GROUND_STAGE_SPEED[stageIdx];
                 bg.farSpeed = FAR_STAGE_SPEED[stageIdx];
                 bg.nearSpeed = NEAR_STAGE_SPEED[stageIdx];
 
-                // 2) 根据阶段设置玩家动画速度（3档）
-                // 阶段1-2 => animTier 0
-                // 阶段3-5 => animTier 1
-                // 阶段6-7 => animTier 2
+                // 玩家动画播放速度：3档
                 int animTier = (stageIdx <= 1) ? 0
                     : (stageIdx <= 4) ? 1
                     : 2;
@@ -657,64 +689,98 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     JUMP_TIER_SPF[animTier]
                 );
 
-                // 3) 玩家物理
+                // 玩家物理
+                bool wasAir = player.isJumping;
                 if (pressJump && !player.isJumping) {
                     Novice::PlayAudio(seJump, false, VOLUME_JUMP);
                 }
-                bool wasAir = player.isJumping;
 
-                // 我们传入一个很大的groundY=2000，这样player.Update不会自动吸地
+                // 自己的player.Update，暂时给一个“没有地面”的大值，
+                // 具体落地由我们后面的碰撞来修正
                 player.Update(pressJump, gravity, jumpPower, 2000.0f);
 
-                // 由我们来做平台碰撞
+                // 玩家 vs 平台 的碰撞修正
                 ResolvePlayerCollision(
                     player, grounds, kNumSegments,
                     kBlockWidth, kBlockHeight
                 );
 
+                // 落地音效
                 if (wasAir && !player.isJumping) {
                     Novice::PlayAudio(seLand, false, VOLUME_LAND);
                 }
 
-                // 4) 地面滚动 + 回收
+                // 平台往左卷动
                 UpdateGrounds(
                     grounds, kNumSegments,
                     scrollSpeed
                 );
 
-                // 5) 掉出屏幕底部 => GameOver
+                // 判断是否掉下去（超过屏幕+200就算死）
                 if (player.center.y - player.h / 2.0f > SCREEN_H + 200.0f) {
                     isGameOver = true;
                 }
 
-                // 6) 累计路程（决定之后的阶段）
+                // 记录跑的距离，用来当分数
                 distanceRun += scrollSpeed;
             }
 
-            // R键回菜单（难度/速度/距离重置）
-            if (keys[DIK_R] && !preKeys[DIK_R]) {
+            // R键：回标题，相当于“按R重开”
+            if (isGameOver && keys[DIK_R] && !preKeys[DIK_R]) {
                 ResetToMenu(
                     gameState, uiState,
                     title, btn,
                     player, grounds,
                     scrollSpeed,
-                    distanceRun
+                    distanceRun,
+                    isGameOver,
+                    // 分数UI位置
+                    scoreDrawX, scoreDrawY,
+                    scoreTargetX, scoreTargetY,
+                    // 分数管理器
+                    score
                 );
             }
         }
 
-        //-------------------------
+        //======================
+        // 分数系统更新
+        //======================
+        // 这里我们用累计距离distanceRun去更新score
+        score.Update(distanceRun);
+
+        //======================
+        // 分数UI位置的目标（决定Lerp）
+        //======================
+        if (gameState == PLAY) {
+            if (isGameOver) {
+                // 死亡画面：把分数字飞到屏幕中间上方
+                scoreTargetX = (float)(SCREEN_W * 0.5f);
+                scoreTargetY = (float)(SCREEN_H * 0.4f);
+            }
+            else {
+                // 正常游戏：分数在右上角
+                scoreTargetX = 1000.0f;
+                scoreTargetY = 20.0f;
+            }
+        }
+
+        // Lerp分数的位置
+        scoreDrawX = Lerp(scoreDrawX, scoreTargetX, SCORE_LERP_T);
+        scoreDrawY = Lerp(scoreDrawY, scoreTargetY, SCORE_LERP_T);
+
+        //======================
         // 背景滚动更新
-        //-------------------------
+        //======================
         if (!isGameOver) {
-            // Lerp 背景滚动系数 (0.15f 直接写，不再用 BG_LERP 常量)
+            // (背景的speedFactor -> targetBgFactor的Lerp，保留你的平滑控制)
             bgSpeedFactor = Lerp(bgSpeedFactor, targetBgFactor, 0.15f);
             UpdateBackground(bg, bgSpeedFactor);
         }
 
-        //-------------------------
-        // UI动效(标题呼吸/按钮飞入飞出)
-        //-------------------------
+        //======================
+        // UI动效 (标题/按钮飞进飞出)
+        //======================
         UpdateTitle(title);
         title.offsetX = Lerp(title.offsetX, title.targetOffsetX, FLY_T);
 
@@ -723,9 +789,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             btn[i].offsetX = Lerp(btn[i].offsetX, btn[i].targetOffsetX, FLY_T);
         }
 
-        //-------------------------
-        // 绘制阶段
-        //-------------------------
+        //======================
+        // 绘制
+        //======================
         DrawBackground(bg); // 背景两层
 
         if (gameState == READY) {
@@ -733,7 +799,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 DrawTitle(title);
                 for (int i = 0; i < 3; i++) {
                     unsigned int col = (i == selected)
-                        ? 0xF2FC32FF  // 高亮黄
+                        ? 0xF2FC32FF  // 亮黄色（当前选中的）
                         : 0xFFFFFFFF; // 普通白
                     DrawButton(btn[i], col);
                 }
@@ -750,28 +816,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
 
         if (gameState == PLAY) {
-
+            // 地面
             DrawGrounds(
                 grounds, kNumSegments,
-                groundTex,       // 柱身用 floor.png
-                groundTopTex,    // 顶面用 floor_top.png
+                groundTex,
+                groundTopTex,
                 kBlockWidth, kBlockHeight,
                 SCREEN_H
             );
 
+            // 玩家
             player.Draw();
 
+            // 分数字（用Lerp后的位置）
+            score.Draw((int)scoreDrawX, (int)scoreDrawY);
 
-            // HUD 调试显示
-            int stageIdxForHud = GetStageIndex(distanceRun);
-            DrawHUD(
-                20, 20,
-                distanceRun,
-                stageIdxForHud,
-                scrollSpeed,
-                bg.nearSpeed,
-                bg.farSpeed
-            );
+            // GameOver时，提示“按R重开”
+            if (isGameOver) {
+                int rX = (int)(SCREEN_W * 0.5f - 200.0f); // 让它大概居中
+                int rY = (int)(scoreDrawY + 80.0f);       // 分数下面一点
+                Novice::DrawSprite(
+                    rX, rY,
+                    texPressR,
+                    1.0f, 1.0f,
+                    0.0f,
+                    0xFFFFFFFF
+                );
+            }
         }
 
         Novice::EndFrame();
