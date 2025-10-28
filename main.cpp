@@ -14,7 +14,7 @@
 //======================
 // 基本设定
 //======================
-const char kWindowTitle[] = "Run Game (段段地面单文件版)";
+const char kWindowTitle[] = "5106_ゴ_ヤマジ_ヤマモト";
 
 constexpr int SCREEN_W = 1280;
 constexpr int SCREEN_H = 720;
@@ -33,21 +33,21 @@ constexpr float kBlockWidth = 128.0f;
 constexpr float kBlockHeight = 128.0f;
 constexpr int   kNumSegments = 4;
 
-// 平台每“段”的随机宽度：2~6块
-constexpr int MIN_BLOCKS_PER_SEG = 4;  // 最窄 => 256px
-constexpr int MAX_BLOCKS_PER_SEG = 7;  // 最宽 => 768px
+// 平台每“段”的随机宽度
+constexpr int MIN_BLOCKS_PER_SEG = 6;  
+constexpr int MAX_BLOCKS_PER_SEG = 10;  
 
 // 段与段之间的最小空隙：用块数（2块=256px）
 constexpr int GAP_BLOCKS = 2;
 
 // 平台的允许高度范围（屏幕向下是+）
 // 注意：Y小 = 更高、更难跳；Y大 = 更低、更安全
-constexpr float GROUND_Y_MIN = 480.0f; // 最高允许平台
+constexpr float GROUND_Y_MIN = 380.0f; // 最高允许平台
 constexpr float GROUND_Y_MAX = 640.0f; // 最低允许平台
 
 // 相邻平台之间的最大高度差（像素）
 // 让高度不会突然差太多，跳起来更舒服
-constexpr float MAX_HEIGHT_STEP = 100.0f;
+constexpr float MAX_HEIGHT_STEP = 200.0f;
 
 //======================
 // 难度阶段系统（7阶段）
