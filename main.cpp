@@ -266,7 +266,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     const float maxScrollSpeed = 64.0f;
     const float baseAccel = 0.05f;
     const float gravity = 1.2f;
-    const float jumpPower = -24.0f;
+    const float jumpPower = -30.0f;
     float bgSpeedFactor = 1.0f;
     float targetBgFactor = 1.0f;
     const float BG_LERP = 0.15f;
