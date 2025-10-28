@@ -2,24 +2,33 @@
 #include <cmath>
 #include <cstdio>
 
+// 计算矩形四角（碰撞调试/预留）
 static inline Corners MakeCorners(float x, float y, float w, float h) {
-    return { {x,y},{x + w,y},{x,y + h},{x + w,y + h} };
+    Corners c;
+    c.lt = { x,         y };
+    c.rt = { x + w,     y };
+    c.lb = { x,     y + h };
+    c.rb = { x + w, y + h };
+    return c;
 }
 
 void Player::Init() {
 
+    // 玩家碰撞体大小（逻辑碰撞盒）
     w = 50.0f;
     h = 50.0f;
+
     vy = 0.0f;
     isJumping = false;
 
-    // 加载跑步贴图
+    // 载入跑步帧
     for (int i = 0; i < 6; i++) {
         char file[128];
         sprintf_s(file, "./Resources/player/run_%02d.png", i);
         runTex[i] = Novice::LoadTexture(file);
     }
-    // 加载跳跃贴图
+
+    // 载入跳跃帧
     for (int i = 0; i < 4; i++) {
         char file[128];
         sprintf_s(file, "./Resources/player/jump_%02d.png", i);
@@ -28,67 +37,104 @@ void Player::Init() {
 
     animFrame = 0;
     animTimer = 0.0f;
+
+    // ★ 默认动画速度（可以被主循环覆盖）
+    // 跑步 ~20fps，跳跃 ~6fps
+    runFrameTime = 0.05f;
+    jumpFrameTime = 0.16f;
+
+    // 初始中心
+    center = { 225.0f, 600.0f };
+    corners = MakeCorners(center.x - w / 2.0f, center.y - h / 2.0f, w, h);
 }
 
 void Player::Reset(float startX, float startY) {
-    center = { startX, startY };
+    center.x = startX;
+    center.y = startY;
     vy = 0.0f;
     isJumping = false;
+
     animFrame = 0;
     animTimer = 0.0f;
-    corners = MakeCorners(center.x - w / 2, center.y - h / 2, w, h);
+
+    corners = MakeCorners(center.x - w / 2.0f, center.y - h / 2.0f, w, h);
 }
 
 void Player::Update(bool spacePressed, float gravity, float jumpPower, float groundY) {
 
-    // 起跳
-    if (spacePressed && !isJumping) {
-        vy = jumpPower;
+    // 跳跃输入（只有在地面上才允许起跳）
+    if (!isJumping && spacePressed) {
+        vy = jumpPower;     // 通常是负的，往上冲
         isJumping = true;
-        animFrame = 0;
     }
 
     // 重力
     vy += gravity;
+
+    // 垂直位移
     center.y += vy;
 
-    // 落地
-    if (center.y + h / 2 >= groundY && groundY < 2000.0f) {
-        center.y = groundY - h / 2;
+    // 如果传进了有效的地面高度 (比如主循环给你真实地面y)：
+    // 玩家脚 = center.y + h/2
+    // 把玩家吸到地面并认为落地
+    float footY = center.y + h * 0.5f;
+    if (footY > groundY) {
+        center.y = groundY - h * 0.5f;
         vy = 0.0f;
-        if (isJumping) {
-            isJumping = false;
-            animFrame = 0;
-        }
+        isJumping = false;
     }
 
-    // 更新外接矩形
-    corners = MakeCorners(center.x - w / 2, center.y - h / 2, w, h);
+    // 更新碰撞盒
+    corners = MakeCorners(center.x - w / 2.0f, center.y - h / 2.0f, w, h);
 
-    // ---- 动画 ----
-    animTimer += 1.0f / 60.0f;
+    // ---------------------------------
+    // 动画更新
+    // ---------------------------------
+    // 固定帧率假设：60fps -> 每帧大约1/60秒
+    const float dt = 1.0f / 60.0f;
+    animTimer += dt;
 
-    if (!isJumping) {
-        if (animTimer >= runFrameTime) {
+    if (isJumping) {
+        // 跳跃动画
+        if (animTimer >= jumpFrameTime) {
             animTimer = 0.0f;
-            animFrame = (animFrame + 1) % 6;
+            animFrame++;
+            if (animFrame >= 4) {
+                animFrame = 3; // 跳跃就停在最后一帧，不循环
+            }
         }
     }
     else {
-        if (animTimer >= jumpFrameTime) {
+        // 跑步动画
+        if (animTimer >= runFrameTime) {
             animTimer = 0.0f;
-            if (animFrame < 3) animFrame++;
+            animFrame++;
+            if (animFrame >= 6) {
+                animFrame = 0;
+            }
         }
     }
 }
 
 void Player::Draw() {
 
-    int tex = isJumping ? jumpTex[animFrame] : runTex[animFrame];
+    // 我们绘制用的sprite是64x64像素风格
+    // （如果你的素材不是64x64，可以改成合适的渲染尺寸）
+    float drawX = center.x - 32.0f;
+    float drawY = center.y - 32.0f;
 
-    // ✅ 按中心绘制，使用原始贴图尺寸128x128
-    float drawX = center.x - 64.0f / 2;
-    float drawY = center.y - 64.0f / 2;
+    int tex = 0;
+    if (isJumping) {
+        int idx = animFrame;
+        if (idx < 0) idx = 0;
+        if (idx > 3) idx = 3;
+        tex = jumpTex[idx];
+    }
+    else {
+        int idx = animFrame % 6;
+        if (idx < 0) idx = 0;
+        tex = runTex[idx];
+    }
 
     Novice::DrawSprite(
         int(drawX),
@@ -100,4 +146,3 @@ void Player::Draw() {
         0xFFFFFFFF
     );
 }
-
