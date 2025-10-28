@@ -53,7 +53,7 @@ void Player::Update(bool spacePressed, float gravity, float jumpPower, float gro
     center.y += vy;
 
     // 落地
-    if (center.y + h / 2 >= groundY) {
+    if (center.y + h / 2 >= groundY && groundY < 2000.0f) {
         center.y = groundY - h / 2;
         vy = 0.0f;
         if (isJumping) {

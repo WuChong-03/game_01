@@ -18,16 +18,16 @@ constexpr int SCREEN_W = 1280;
 constexpr int SCREEN_H = 720;
 
 //======================
-// 常量设置（保持不变）
+// 常量设置
 //======================
 constexpr float VOLUME_BGM = 0.45f;
 constexpr float VOLUME_UI_MOVE = 0.8f;
 constexpr float VOLUME_UI_START = 2.0f;
-constexpr float VOLUME_JUMP = 0.8f;
-constexpr float VOLUME_LAND = 0.6f;
+constexpr float VOLUME_JUMP = 1.8f;
+constexpr float VOLUME_LAND = 1.6f;
 
 //======================
-// 段段地面参数（保持不变）
+// 段段地面参数
 //======================
 constexpr float kBlockWidth = 128.0f;
 constexpr float kBlockHeight = 128.0f;
@@ -37,9 +37,6 @@ constexpr int   kNumSegments = 4;
 const float kHeights[] = { 400.0f, 500.0f, 600.0f, 700.0f };
 const int   kNumHeights = (int)(sizeof(kHeights) / sizeof(kHeights[0]));
 
-//======================
-// 段段地面：内联在本文件
-//======================
 struct Ground {
     float x;
     float y;
@@ -47,7 +44,6 @@ struct Ground {
     bool  isGround;
 };
 
-// 初始化地面
 static inline void InitGrounds(
     Ground* grounds, int num, float /*startY*/,
     float blockW, int blocksPerSeg,
@@ -55,14 +51,12 @@ static inline void InitGrounds(
 ) {
     for (int i = 0; i < num; i++) {
         grounds[i].x = i * blockW * (blocksPerSeg + 2);
-        // 初始高度：循环使用高度表，简单稳定
         grounds[i].y = heights[i % nHeights];
         grounds[i].blockCount = blocksPerSeg;
         grounds[i].isGround = true;
     }
 }
 
-// 将一段地面移动到右端并随机高度（避免太接近）
 static inline void RecycleOneGround(
     Ground& g, const Ground* grounds, int num,
     float blockW, int blocksPerSeg,
@@ -74,7 +68,6 @@ static inline void RecycleOneGround(
         if (grounds[j].x > maxX) maxX = grounds[j].x;
     }
     g.x = maxX + blockW * (blocksPerSeg + 2);
-
     float newY;
     do {
         newY = heights[std::rand() % nHeights];
@@ -82,7 +75,6 @@ static inline void RecycleOneGround(
     g.y = newY;
 }
 
-// 更新地面（左移+循环）
 static inline void UpdateGrounds(
     Ground* grounds, int num,
     float scrollSpeed,
@@ -97,7 +89,91 @@ static inline void UpdateGrounds(
     }
 }
 
-// 绘制：从每段顶 y 拉到底部
+//=================================================
+// 检查玩家矩形与地面块的AABB碰撞
+//=================================================
+//=================================================
+// ✅ 改进版：只检测脚下的地面
+//=================================================
+//------------------------------------------------------
+// 完整AABB碰撞检测（区分水平与垂直）
+//------------------------------------------------------
+//------------------------------------------------------
+// 完整AABB碰撞：先左右、再上下（无未使用变量）
+//------------------------------------------------------
+static void ResolvePlayerCollision(Player& player, const Ground* grounds, int num,
+    float blockW, float blockH)
+{
+    // --- 水平方向：把人从墙里“挤出来” ---
+    float px = player.center.x - player.w / 2.0f;
+    float py = player.center.y - player.h / 2.0f;
+    float pw = player.w;
+    float ph = player.h;
+
+    for (int i = 0; i < num; i++) {
+        for (int j = 0; j < grounds[i].blockCount; j++) {
+            float gx = grounds[i].x + j * blockW;
+            float gy = grounds[i].y;
+
+            bool overlapX = (px + pw > gx) && (px < gx + blockW);
+            bool overlapY = (py + ph > gy) && (py < gy + blockH);
+            if (overlapX && overlapY) {
+                // 计算左右重叠量，往较小的一侧“推”出去
+                float pushLeft = (gx + blockW) - px;   // 往右推
+                float pushRight = (px + pw) - gx;       // 往左推
+                if (pushLeft < pushRight) {
+                    player.center.x += pushLeft - 0.1f;
+                }
+                else {
+                    player.center.x -= pushRight - 0.1f;
+                }
+                // 更新包围盒
+                px = player.center.x - player.w / 2.0f;
+                py = player.center.y - player.h / 2.0f;
+            }
+        }
+    }
+
+    // --- 垂直方向：只在“下落 + 脚触到顶部附近”时落地 ---
+    float nearestY = 2000.0f;
+    bool onGround = false;
+
+    // 再次获取包围盒（可能被水平修正过）
+    px = player.center.x - player.w / 2.0f;
+    py = player.center.y - player.h / 2.0f;
+
+    for (int i = 0; i < num; i++) {
+        for (int j = 0; j < grounds[i].blockCount; j++) {
+            float gx = grounds[i].x + j * blockW;
+            float gy = grounds[i].y;
+
+            bool overlapX = (px + pw > gx) && (px < gx + blockW);
+            bool overlapY = (py + ph > gy) && (py < gy + blockH);
+            if (overlapX && overlapY) {
+                if (player.vy >= 0.0f &&           // 只在下落
+                    py + ph > gy &&                // 脚已进入方块上缘
+                    py + ph < gy + blockH * 0.5f) // 且在上半区，避免从下顶住也被吸附
+                {
+                    onGround = true;
+                    if (gy < nearestY) nearestY = gy;
+                }
+            }
+        }
+    }
+
+    if (onGround) {
+        player.center.y = nearestY - player.h / 2.0f;
+        player.vy = 0.0f;
+        if (player.isJumping) { // 动画/状态复位
+            player.isJumping = false;
+            player.animFrame = 0;
+        }
+    }
+}
+
+
+
+
 static inline void DrawGrounds(
     const Ground* grounds, int num,
     int groundTex,
@@ -108,12 +184,11 @@ static inline void DrawGrounds(
         for (int j = 0; j < grounds[i].blockCount; j++) {
             float tileX = grounds[i].x + j * blockW;
             float tileY = grounds[i].y;
-
             Novice::DrawQuad(
-                (int)tileX, (int)tileY,                 // 左上
-                (int)(tileX + blockW), (int)tileY,      // 右上
-                (int)tileX, screenH,                    // 左下
-                (int)(tileX + blockW), screenH,         // 右下
+                (int)tileX, (int)tileY,
+                (int)(tileX + blockW), (int)tileY,
+                (int)tileX, screenH,
+                (int)(tileX + blockW), screenH,
                 0, 0, (int)blockW, (int)blockH,
                 groundTex, 0xFFFFFFFF
             );
@@ -121,7 +196,6 @@ static inline void DrawGrounds(
     }
 }
 
-// 查询玩家脚下地面的 y 值（找不到则返回很大值→继续下落）
 static inline float QueryGroundYAtX(
     const Ground* grounds, int num,
     float px, float blockW
@@ -136,14 +210,12 @@ static inline float QueryGroundYAtX(
     return 2000.0f;
 }
 
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Novice::Initialize(kWindowTitle, SCREEN_W, SCREEN_H);
     char keys[256]{}, preKeys[256]{};
     std::srand(unsigned(std::time(nullptr)));
 
-    //--------------------------------------
-    // 音频（保持不变）
-    //--------------------------------------
     int seBgm = Novice::LoadAudio("./Resources/sound/bgm_gameplay.wav");
     int seJump = Novice::LoadAudio("./Resources/sound/jump_start.wav");
     int seLand = Novice::LoadAudio("./Resources/sound/jump_land.wav");
@@ -156,9 +228,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         playBgmHandle = Novice::PlayAudio(audio, true, VOLUME_BGM);
         };
 
-    //--------------------------------------
-    // 纹理（保持不变）
-    //--------------------------------------
     int texStart = Novice::LoadTexture("./Resources/button_start.png");
     int texHow = Novice::LoadTexture("./Resources/button_howToPlay.png");
     int texExit = Novice::LoadTexture("./Resources/button_exit.png");
@@ -167,15 +236,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     int bgFar = Novice::LoadTexture("./Resources/bg_far.png");
     int bgNear = Novice::LoadTexture("./Resources/bg_near.png");
-    // ⚠️ 删除旧的 bgFloor（不再需要）
-
     int groundTex = Novice::LoadTexture("./Resources/floor/floor.png");
 
-    //--------------------------------------
-    // 背景与UI初始化（保持不变，改为2纹理）
-    //--------------------------------------
     Background bg;
-    InitBackground(bg, bgFar, bgNear);  // ✅ 改为 2 参数版本
+    InitBackground(bg, bgFar, bgNear);
 
     Title title;
     InitTitle(title, texTitle, 120.0f, 100.0f);
@@ -186,59 +250,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     InitButton(btn[2], texExit, 850.0f, 500.0f);
     int selected = 1;
 
-    //--------------------------------------
-    // 玩家（保持你工程内 Player 的逻辑与数值）
-    //--------------------------------------
     Player player;
     player.Init();
-    player.Reset(225.0f, 600.0f);
 
-    //--------------------------------------
-    // 段段地面初始化
-    //--------------------------------------
     Ground grounds[kNumSegments];
     InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
 
-    //--------------------------------------
-    // 状态与控制变量（保持不变）
-    //--------------------------------------
+    // ✅ 出生时自动贴地
+    player.Reset(225.0f, 600.0f);
+    float spawnGroundY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
+    player.center.y = spawnGroundY - player.h * 0.5f;
+
     bool  isGameOver = false;
     float scrollSpeed = 6.0f;
     const float maxScrollSpeed = 64.0f;
     const float baseAccel = 0.05f;
-
     const float gravity = 1.2f;
     const float jumpPower = -24.0f;
-
     float bgSpeedFactor = 1.0f;
     float targetBgFactor = 1.0f;
     const float BG_LERP = 0.15f;
     const float FLY_T = 0.18f;
 
     GameState gameState = READY;
-    UIState   uiState = MENU;
+    UIState uiState = MENU;
 
-    //--------------------------------------
-    // 主循环
-    //--------------------------------------
     while (Novice::ProcessMessage() == 0) {
         Novice::BeginFrame();
         std::memcpy(preKeys, keys, 256);
         Novice::GetHitKeyStateAll(keys);
 
-        //--------------------------------------
-        // 标题菜单状态
-        //--------------------------------------
         if (gameState == READY && uiState == MENU) {
-
             if (!Novice::IsPlayingAudio(playBgmHandle)) PlayBGM(seBgm);
-
             if (keys[DIK_W] && !preKeys[DIK_W]) { selected = (selected + 2) % 3; Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE); }
             if (keys[DIK_S] && !preKeys[DIK_S]) { selected = (selected + 1) % 3; Novice::PlayAudio(seUiMove, false, VOLUME_UI_MOVE); }
 
             if (keys[DIK_RETURN] && !preKeys[DIK_RETURN]) {
                 Novice::PlayAudio(seUiStart, false, VOLUME_UI_START);
-
                 if (selected == 0) {
                     gameState = PLAY;
                     isGameOver = false;
@@ -246,44 +294,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     for (int i = 0; i < 3; i++) btn[i].targetOffsetX = +800.0f;
                     player.Reset(225.0f, 600.0f);
                     InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
+                    float gY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
+                    player.center.y = gY - player.h * 0.5f; // ✅ 再次贴地
                     scrollSpeed = 6.0f;
                 }
-                else if (selected == 1) {
-                    uiState = HOWTO;
-                }
-                else if (selected == 2) {
-                    Novice::Finalize();
-                    return 0;
-                }
+                else if (selected == 1) uiState = HOWTO;
+                else if (selected == 2) { Novice::Finalize(); return 0; }
             }
         }
 
-        //--------------------------------------
-        // 游戏进行中（段段地面 & 落地逻辑）
-        //--------------------------------------
         if (gameState == PLAY) {
             bool pressJump = (keys[DIK_SPACE] && !preKeys[DIK_SPACE]);
-
             if (!isGameOver) {
-                // 查询玩家脚下地面高度
-                float groundY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
-
-                if (pressJump && !player.isJumping)
-                    Novice::PlayAudio(seJump, false, VOLUME_JUMP);
-
+                if (pressJump && !player.isJumping) Novice::PlayAudio(seJump, false, VOLUME_JUMP);
                 bool wasAir = player.isJumping;
-                player.Update(pressJump, gravity, jumpPower, groundY);
-                if (wasAir && !player.isJumping)
-                    Novice::PlayAudio(seLand, false, VOLUME_LAND);
+                // 由 Player::Update 负责：起跳 + 重力 + 动画（groundY 传 2000，避免自动吸地）
+                player.Update(pressJump, gravity, jumpPower, 2000.0f);  // ← 关键！:contentReference[oaicite:3]{index=3}
+                // 由我们这边负责：左右墙 & 脚底落地
+                ResolvePlayerCollision(player, grounds, kNumSegments, kBlockWidth, kBlockHeight);
+                player.center.x = 225.0f;
+                // ✅ 检查是否掉出屏幕底部
+                if (player.center.y - player.h / 2.0f > SCREEN_H + 200.0f) {
+                    isGameOver = true;  // 掉落判定
+                }
 
-                // 地面左移加速（同事风格）
+                if (wasAir && !player.isJumping) Novice::PlayAudio(seLand, false, VOLUME_LAND);
                 scrollSpeed += baseAccel;
                 if (scrollSpeed > maxScrollSpeed) scrollSpeed = maxScrollSpeed;
-
                 UpdateGrounds(grounds, kNumSegments, scrollSpeed, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
             }
-
-            // R 键回到菜单
             if (keys[DIK_R] && !preKeys[DIK_R]) {
                 gameState = READY;
                 uiState = MENU;
@@ -291,21 +330,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 for (int i = 0; i < 3; i++) btn[i].targetOffsetX = 0;
                 player.Reset(225.0f, 600.0f);
                 InitGrounds(grounds, kNumSegments, 600.0f, kBlockWidth, kBlocksPerSeg, kHeights, kNumHeights);
+                float gY = QueryGroundYAtX(grounds, kNumSegments, player.center.x, kBlockWidth);
+                player.center.y = gY - player.h * 0.5f; // ✅ 重开时贴地
                 scrollSpeed = 6.0f;
             }
         }
 
-        //--------------------------------------
-        // 背景更新
-        //--------------------------------------
         if (!isGameOver) {
             bgSpeedFactor = Lerp(bgSpeedFactor, targetBgFactor, BG_LERP);
             UpdateBackground(bg, bgSpeedFactor);
         }
 
-        //--------------------------------------
-        // UI 动画
-        //--------------------------------------
         UpdateTitle(title);
         title.offsetX = Lerp(title.offsetX, title.targetOffsetX, FLY_T);
         for (int i = 0; i < 3; i++) {
@@ -313,11 +348,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             btn[i].offsetX = Lerp(btn[i].offsetX, btn[i].targetOffsetX, FLY_T);
         }
 
-        //--------------------------------------
-        // 绘制
-        //--------------------------------------
         DrawBackground(bg);
-
         if (gameState == READY) {
             if (uiState == MENU) {
                 DrawTitle(title);
@@ -329,7 +360,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 if (keys[DIK_ESCAPE] && !preKeys[DIK_ESCAPE]) uiState = MENU;
             }
         }
-
         if (gameState == PLAY) {
             DrawGrounds(grounds, kNumSegments, groundTex, kBlockWidth, kBlockHeight, SCREEN_H);
             player.Draw();
@@ -337,7 +367,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         Novice::EndFrame();
     }
-
     Novice::Finalize();
     return 0;
 }
